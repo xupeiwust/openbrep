@@ -18,6 +18,7 @@ import hmac
 import string
 import zipfile
 import shutil
+import subprocess
 from datetime import datetime
 from pathlib import Path
 
@@ -468,9 +469,24 @@ def _key_for_model(model: str) -> str:
         return _provider_keys.get("google", "")
     return ""
 
+
+def _is_archicad_running() -> bool:
+    try:
+        result = subprocess.run(
+            ["pgrep", "-x", "Archicad"],
+            capture_output=True, timeout=1
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
 # ── Sidebar Config ────────────────────────────────────────
 
 with st.sidebar:
+    if _TAPIR_IMPORT_OK and not _is_archicad_running():
+        st.sidebar.warning("⚠️ Archicad 未运行，编译和实时预览不可用")
+
     st.markdown('<p class="main-header">OpenBrep</p>', unsafe_allow_html=True)
     st.markdown('<p class="intro-header">用自然语言驱动 ArchiCAD GDL 库对象的创建、修改与编译。</p>', unsafe_allow_html=True)
     st.markdown(f'<p class="sub-header">OpenBrep: Code Your Boundaries · v{OPENBREP_VERSION} · HSF-native</p>', unsafe_allow_html=True)
@@ -495,7 +511,7 @@ with st.sidebar:
     pro_code_input = st.text_input("授权码", type="password", key="pro_code_input")
     c1, c2 = st.columns(2)
     with c1:
-        if st.button("解锁 Pro", use_container_width=True):
+        if st.button("解锁 Pro", width='stretch'):
             ok, msg = _verify_pro_code(pro_code_input)
             if ok:
                 st.session_state.pro_unlocked = True
@@ -509,7 +525,7 @@ with st.sidebar:
             else:
                 st.error(msg)
     with c2:
-        if st.button("锁回 Free", use_container_width=True):
+        if st.button("锁回 Free", width='stretch'):
             st.session_state.pro_unlocked = False
             _save_license(work_dir, {"pro_unlocked": False})
             st.info("已切回 Free 模式")
@@ -661,7 +677,7 @@ with st.sidebar:
         proj = st.session_state.project
         st.subheader(f"📦 {proj.name}")
         st.caption(f"参数: {len(proj.parameters)} | 脚本: {len(proj.scripts)}")
-        if st.button("🗑️ 清除项目", use_container_width=True):
+        if st.button("🗑️ 清除项目", width='stretch'):
             _keep_work_dir  = st.session_state.work_dir
             _keep_api_keys  = st.session_state.model_api_keys
             _keep_chat      = st.session_state.chat_history   # preserve chat
@@ -1019,13 +1035,13 @@ if _HAS_DIALOG:
                                     label_visibility="collapsed", key=f"fs_ta_{fpath}") or ""
         c1, c2 = st.columns([2, 6])
         with c1:
-            if st.button("✅ 应用", type="primary", use_container_width=True):
+            if st.button("✅ 应用", type="primary", width='stretch'):
                 if st.session_state.project:
                     st.session_state.project.set_script(stype, new_code)
                     st.session_state.editor_version += 1
                 st.rerun()
         with c2:
-            if st.button("❌ 取消", use_container_width=True):
+            if st.button("❌ 取消", width='stretch'):
                 st.rerun()
 else:
     def _fullscreen_editor_dialog(stype, fpath, label):  # type: ignore[misc]
@@ -2345,7 +2361,7 @@ def _render_preview_2d(data: Preview2DResult) -> None:
         xaxis={"title": "X"},
         yaxis={"title": "Y", "scaleanchor": "x", "scaleratio": 1},
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 
 def _render_preview_3d(data: Preview3DResult) -> None:
@@ -2402,7 +2418,7 @@ def _render_preview_3d(data: Preview3DResult) -> None:
             "zaxis": {"title": "Z"},
         },
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 
 def _run_preview(proj: HSFProject, target: str) -> tuple[bool, str]:
@@ -2522,7 +2538,7 @@ with col_editor:
                 help="编译输出文件名",
             )
             st.session_state.pending_gsm_name = gsm_name_input
-            if st.button("🔧  编  译  GSM", type="primary", use_container_width=True,
+            if st.button("🔧  编  译  GSM", type="primary", width='stretch',
                          help="将当前所有脚本编译为 ArchiCAD .gsm 对象"):
                 with st.spinner("编译中..."):
                     success, result_msg = do_compile(
@@ -2550,7 +2566,7 @@ with col_editor:
             if _tapir_ok:
                 _ac_col1, _ac_col2 = st.columns([2, 3])
                 with _ac_col1:
-                    if st.button("🏗️ 在 Archicad 中测试", use_container_width=True,
+                    if st.button("🏗️ 在 Archicad 中测试", width='stretch',
                                  help="触发 Archicad 重新加载库，捕获 GDL 运行期错误回传到 chat"):
                         st.session_state.tapir_test_trigger = True
                         st.rerun()
@@ -2559,20 +2575,20 @@ with col_editor:
 
                 _p0_b1, _p0_b2, _p0_b3, _p0_b4 = st.columns(4)
                 with _p0_b1:
-                    if st.button("同步选中", use_container_width=True):
+                    if st.button("同步选中", width='stretch'):
                         st.session_state.tapir_selection_trigger = True
                         st.rerun()
                 with _p0_b2:
-                    if st.button("高亮选中", use_container_width=True):
+                    if st.button("高亮选中", width='stretch'):
                         st.session_state.tapir_highlight_trigger = True
                         st.rerun()
                 with _p0_b3:
-                    if st.button("读取参数", use_container_width=True):
+                    if st.button("读取参数", width='stretch'):
                         st.session_state.tapir_load_params_trigger = True
                         st.rerun()
                 with _p0_b4:
                     _can_apply = bool(st.session_state.get("tapir_selected_params"))
-                    if st.button("应用参数", use_container_width=True, disabled=not _can_apply):
+                    if st.button("应用参数", width='stretch', disabled=not _can_apply):
                         st.session_state.tapir_apply_params_trigger = True
                         st.rerun()
             else:
@@ -2582,7 +2598,7 @@ with col_editor:
         tb_check, tb_prev2d, tb_prev3d, tb_clear, tb_log_btn = st.columns([1.2, 1.1, 1.1, 1.0, 1.0])
 
         with tb_check:
-            if st.button("🔍 全检查", use_container_width=True):
+            if st.button("🔍 全检查", width='stretch'):
                 _check_all_ok = True
                 for _stype, _fpath, _label in _SCRIPT_MAP:
                     _chk_content = proj_now.get_script(_stype)
@@ -2599,7 +2615,7 @@ with col_editor:
                     st.success("✅ 所有脚本语法正常")
 
         with tb_prev2d:
-            if st.button("👁️ 预览 2D", use_container_width=True, help="运行 2D 子集解释并显示图形"):
+            if st.button("👁️ 预览 2D", width='stretch', help="运行 2D 子集解释并显示图形"):
                 _ok, _msg = _run_preview(proj_now, "2d")
                 if _ok:
                     st.toast(_msg, icon="✅")
@@ -2607,7 +2623,7 @@ with col_editor:
                     st.error(_msg)
 
         with tb_prev3d:
-            if st.button("🧊 预览 3D", use_container_width=True, help="运行 3D 子集解释并显示图形"):
+            if st.button("🧊 预览 3D", width='stretch', help="运行 3D 子集解释并显示图形"):
                 _ok, _msg = _run_preview(proj_now, "3d")
                 if _ok:
                     st.toast(_msg, icon="✅")
@@ -2615,11 +2631,11 @@ with col_editor:
                     st.error(_msg)
 
         with tb_clear:
-            if st.button("🗑️ 清空", use_container_width=True, help="重置项目：脚本、参数、日志全清，保留设置"):
+            if st.button("🗑️ 清空", width='stretch', help="重置项目：脚本、参数、日志全清，保留设置"):
                 st.session_state.confirm_clear = True
 
         with tb_log_btn:
-            if st.button("📋 日志", use_container_width=True):
+            if st.button("📋 日志", width='stretch'):
                 st.session_state["_show_log_dialog"] = True
 
         # ── 日志弹窗 ──────────────────────────────────────────
@@ -2700,7 +2716,7 @@ with col_editor:
                 for p in proj_now.parameters
             ]
             if param_data:
-                st.dataframe(param_data, use_container_width=True, hide_index=True)
+                st.dataframe(param_data, width='stretch', hide_index=True)
             else:
                 st.caption("暂无参数，通过 AI 对话添加，或手动添加。")
 
@@ -2744,7 +2760,7 @@ with col_editor:
                         st.markdown(_SCRIPT_HELP.get(fpath, ""))
                 with _tab_fs_col:
                     if st.button("⛶", key=f"fs_{fpath}_v{_ev}",
-                                 help="全屏编辑", use_container_width=True):
+                                 help="全屏编辑", width='stretch'):
                         _fullscreen_editor_dialog(stype, fpath, label)
 
                 current_code = proj_now.get_script(stype) or ""
@@ -2824,7 +2840,7 @@ with col_chat:
             else:
                 st.caption("描述需求，AI 自动创建 GDL 对象写入编辑器")
         with _chat_clear_col:
-            if st.button("🗑️ 清空对话", use_container_width=True, help="清空聊天记录，不影响脚本和参数"):
+            if st.button("🗑️ 清空对话", width='stretch', help="清空聊天记录，不影响脚本和参数"):
                 st.session_state.chat_history = []
                 st.session_state.adopted_msg_index = None
                 st.session_state.chat_anchor_focus = None
@@ -2854,7 +2870,7 @@ with col_chat:
             with _anchor_cols[1]:
                 st.caption(f"范围: {', '.join(_picked['paths'])}")
             with _anchor_cols[2]:
-                if st.button("📍 定位", use_container_width=True, key="chat_anchor_go"):
+                if st.button("📍 定位", width='stretch', key="chat_anchor_go"):
                     st.session_state.chat_anchor_pending = _picked["msg_idx"]
 
         # Chat history with action bar on each assistant message
@@ -2890,13 +2906,13 @@ with col_chat:
                             )
                             _fb_c1, _fb_c2 = st.columns([1, 1])
                             with _fb_c1:
-                                if st.button("📤 提交", key=f"dislike_submit_{_i}", type="primary", use_container_width=True):
+                                if st.button("📤 提交", key=f"dislike_submit_{_i}", type="primary", width='stretch'):
                                     _save_feedback(_i, "negative", _msg["content"], comment=_fb_text)
                                     st.session_state[f"_show_dislike_{_i}"] = False
                                     st.toast("已记录 👎，感谢反馈", icon="📝")
                                     st.rerun()
                             with _fb_c2:
-                                if st.button("取消", key=f"dislike_cancel_{_i}", use_container_width=True):
+                                if st.button("取消", key=f"dislike_cancel_{_i}", width='stretch'):
                                     st.session_state[f"_show_dislike_{_i}"] = False
                                     st.rerun()
                     with _cc:
@@ -2919,7 +2935,7 @@ with col_chat:
                         if _has_code:
                             _is_adopted = st.session_state.adopted_msg_index == _i
                             _adopt_label = "✅ 已采用" if _is_adopted else "📥 采用这套"
-                            if st.button(_adopt_label, key=f"adopt_{_i}", use_container_width=True):
+                            if st.button(_adopt_label, key=f"adopt_{_i}", width='stretch'):
                                 st.session_state["_pending_adopt_idx"] = _i
             if st.session_state.get(f"_showcopy_{_i}", False):
                 st.code(_msg["content"], language="text")
@@ -2930,7 +2946,7 @@ with col_chat:
             st.warning("将按返回文件覆盖：命中的脚本/参数全覆盖写入，未命中的部分保留不变，确认？")
             _da, _db = st.columns(2)
             with _da:
-                if st.button("✅ 确认覆盖", type="primary", use_container_width=True):
+                if st.button("✅ 确认覆盖", type="primary", width='stretch'):
                     _msg_content = st.session_state.chat_history[msg_idx]["content"]
                     extracted = _extract_gdl_from_text(_msg_content)
                     if extracted:
@@ -2945,7 +2961,7 @@ with col_chat:
                     else:
                         st.error("未找到可提取的代码块")
             with _db:
-                if st.button("❌ 取消", use_container_width=True):
+                if st.button("❌ 取消", width='stretch'):
                     st.session_state["_pending_adopt_idx"] = None
                     st.rerun()
 
@@ -2974,7 +2990,7 @@ with col_chat:
             )
             _pac1, _pac2, _pac3 = st.columns([1.2, 1, 5])
             with _pac1:
-                if st.button("✅ 写入", type="primary", use_container_width=True,
+                if st.button("✅ 写入", type="primary", width='stretch',
                              key="chat_pending_apply"):
                     _proj = st.session_state.project
                     if _proj:
@@ -2988,7 +3004,7 @@ with col_chat:
                     st.session_state.pending_ai_label = ""
                     st.rerun()
             with _pac2:
-                if st.button("❌ 忽略", use_container_width=True,
+                if st.button("❌ 忽略", width='stretch',
                              key="chat_pending_discard"):
                     st.session_state.pending_diffs    = {}
                     st.session_state.pending_ai_label = ""
@@ -3002,7 +3018,7 @@ with col_chat:
         _dbg_label = "✖ 退出 Debug" if _dbg_active else "🔍 开启 Debug 编辑器"
         if st.button(
             _dbg_label,
-            use_container_width=True,
+            width='stretch',
             type=("primary" if _dbg_active else "secondary"),
             key="debug_editor_toggle_btn",
             help="开启后：下次发送将附带编辑器全部脚本+参数+语法检查报告",
