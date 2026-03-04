@@ -31,6 +31,89 @@ _CONVERTER_SEARCH_PATHS = {
 _AC_VERSIONS = ["29", "28", "27", "26", "25"]
 
 
+ALL_MODELS = [
+    # Zhipu GLM
+    "glm-4-flash",
+    "glm-4-flash-x",
+    "glm-4-air",
+    "glm-4-plus",
+    # DeepSeek
+    "deepseek-chat",
+    "deepseek-reasoner",
+    # Alibaba Qwen
+    "qwen-max",
+    "qwen-plus",
+    "qwen-turbo",
+    "qwq-plus",
+    "qwen-vl-plus",
+    # Moonshot Kimi
+    "moonshot-v1-8k",
+    "moonshot-v1-32k",
+    "moonshot-v1-128k",
+    # OpenAI
+    "gpt-4.1",
+    "gpt-4.1-mini",
+    "gpt-4o",
+    "gpt-4o-mini",
+    "o3",
+    "o3-mini",
+    "o4-mini",
+    # Anthropic Claude
+    "claude-sonnet-4-6",
+    "claude-opus-4-6",
+    "claude-haiku-4-5-20251001",
+    # Google Gemini
+    "gemini/gemini-2.5-flash",
+    "gemini/gemini-2.5-pro",
+    # Ollama
+    "ollama/qwen2.5:14b",
+    "ollama/qwen3:8b",
+    "ollama/deepseek-coder-v2:16b",
+]
+
+VISION_MODELS = {
+    "qwen-vl-plus",
+    "gpt-4.1",
+    "gpt-4.1-mini",
+    "gpt-4o",
+    "gpt-4o-mini",
+    "claude-sonnet-4-6",
+    "claude-opus-4-6",
+    "claude-haiku-4-5-20251001",
+    "gemini/gemini-2.5-flash",
+    "gemini/gemini-2.5-pro",
+}
+
+REASONING_MODELS = {
+    "deepseek-reasoner",
+    "qwq-plus",
+    "o3",
+    "o3-mini",
+    "o4-mini",
+}
+
+
+def model_to_provider(model: str) -> str:
+    m = (model or "").lower()
+    if m.startswith("glm-"):
+        return "zhipu"
+    if m.startswith("deepseek-"):
+        return "deepseek"
+    if m.startswith("claude-"):
+        return "anthropic"
+    if m.startswith("gpt-") or m.startswith("o1") or m.startswith("o3") or m.startswith("o4"):
+        return "openai"
+    if m.startswith("gemini/") or m.startswith("gemini-"):
+        return "google"
+    if m.startswith("qwen-") or m.startswith("qwq-"):
+        return "aliyun"
+    if m.startswith("moonshot-"):
+        return "kimi"
+    if m.startswith("ollama/"):
+        return "ollama"
+    return "custom"
+
+
 def _auto_detect_converter() -> Optional[str]:
     env_path = os.environ.get("CONVERTER_PATH")
     if env_path and Path(env_path).is_file():

@@ -6,7 +6,7 @@
 # 👁 = 支持图片分析  🧠 = 推理模型
 #
 # ── 智谱 GLM (bigmodel.cn) ──
-#   glm-4.7 (★ 默认)  glm-4.7-flash  glm-4.6v 👁  glm-4-plus  glm-4-flash (免费)
+#   glm-4-flash (★ 默认，免费)  glm-4-flash-x (免费)  glm-4-air  glm-4-plus
 #
 # ── DeepSeek (api.deepseek.com) ──
 #   deepseek-chat  deepseek-reasoner 🧠
@@ -30,7 +30,8 @@
 # ── Ollama 本地（无需 Key）──
 #   ollama/qwen2.5:14b  ollama/qwen3:8b  ollama/deepseek-coder-v2:16b
 #
-model = "glm-4.7"
+# 免费模型，只需 API Key，无需充值
+model = "glm-4-flash"
 temperature = 0.2
 max_tokens = 4096
 
