@@ -209,10 +209,15 @@ class GDLAgentConfig:
         if config_path is None:
             config_path = os.environ.get("GDL_AGENT_CONFIG", "config.toml")
         path = Path(config_path)
-        example_path = Path("config.toml.example")
+        example_path = None
+        for name in ["config.toml.example", "config.example.toml"]:
+            p = Path(name)
+            if p.exists():
+                example_path = p
+                break
 
         # 自动从 example 复制，首次运行时引导用户
-        if not path.exists() and example_path.exists():
+        if not path.exists() and example_path and example_path.exists():
             shutil.copy(example_path, path)
             print("=" * 60)
             print("📋 已自动生成 config.toml，请编辑填入你的 API Key：")
@@ -291,6 +296,25 @@ class GDLAgentConfig:
     def ensure_dirs(self):
         for d in [self.knowledge_dir, self.templates_dir, self.src_dir, self.output_dir]:
             Path(d).mkdir(parents=True, exist_ok=True)
+
+    def save(self, config_path: str = "config.toml") -> None:
+        """将当前配置写回 config.toml"""
+        import toml
+        data = {
+            "llm": {
+                "model": self.llm.model,
+                "api_key": self.llm.api_key or "",
+                "api_base": self.llm.api_base or "",
+                "temperature": self.llm.temperature,
+                "max_tokens": self.llm.max_tokens,
+                "provider_keys": self.llm.provider_keys,
+            },
+            "compiler": {
+                "lp_converter_path": self.compiler.path or "",
+                "work_dir": self.output_dir,
+            }
+        }
+        Path(config_path).write_text(toml.dumps(data), encoding="utf-8")
 
     def to_toml_string(self) -> str:
         lines = [

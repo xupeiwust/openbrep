@@ -619,8 +619,8 @@ with st.sidebar:
             if _provider and api_key:
                 _save_cfg.llm.provider_keys[_provider] = api_key
             _save_cfg.save()
-        except Exception:
-            pass
+        except Exception as e:
+            st.sidebar.warning(f"配置保存失败：{e}")
 
     # LP_XMLConverter 路径变更时持久化写回 config.toml
     if converter_path and converter_path != _config_defaults.get("compiler_path", ""):
@@ -630,8 +630,8 @@ with st.sidebar:
             _save_cfg2.compiler.path = converter_path
             _save_cfg2.save()
             _config_defaults["compiler_path"] = converter_path
-        except Exception:
-            pass
+        except Exception as e:
+            st.sidebar.warning(f"配置保存失败：{e}")
 
     if "claude" in model_name:
         st.caption("🔑 [获取 Claude API Key →](https://console.anthropic.com/settings/keys)")
