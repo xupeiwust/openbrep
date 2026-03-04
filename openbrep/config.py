@@ -209,6 +209,16 @@ class GDLAgentConfig:
         if config_path is None:
             config_path = os.environ.get("GDL_AGENT_CONFIG", "config.toml")
         path = Path(config_path)
+        example_path = Path("config.toml.example")
+
+        # 自动从 example 复制，首次运行时引导用户
+        if not path.exists() and example_path.exists():
+            shutil.copy(example_path, path)
+            print("=" * 60)
+            print("📋 已自动生成 config.toml，请编辑填入你的 API Key：")
+            print(f"   {path.absolute()}")
+            print("=" * 60)
+
         if path.exists() and tomllib is not None:
             with open(path, "rb") as f:
                 data = tomllib.load(f)
