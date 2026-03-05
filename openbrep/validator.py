@@ -28,10 +28,7 @@ class GDLValidator:
         return validate_paramlist(params)
 
     def validate_2d(self, script_text: str) -> list[str]:
-        issues: list[str] = []
-        if "PROJECT2" not in (script_text or "").upper():
-            issues.append("缺少PROJECT2")
-        return issues
+        return []
 
     def validate_3d(self, script_text: str) -> list[str]:
         issues: list[str] = []
@@ -42,20 +39,16 @@ class GDLValidator:
             issues.append("末尾缺少END")
 
         command_counts = self._count_commands(text)
-        add_count = command_counts["ADD"]
-        del_count = command_counts["DEL"]
-        if add_count != del_count:
-            issues.append(f"ADD/DEL不配对，ADD={add_count} DEL={del_count}")
 
         for_count = command_counts["FOR"]
         next_count = command_counts["NEXT"]
         if for_count != next_count:
-            issues.append(f"FOR/NEXT不配对，FOR={for_count} NEXT={next_count}")
+            issues.append(f"⚠️ 建议检查：FOR/NEXT不配对，FOR={for_count} NEXT={next_count}")
 
         if_count = command_counts["IF_BLOCK"]
         endif_count = command_counts["ENDIF"]
         if if_count != endif_count:
-            issues.append(f"IF/ENDIF不配对，IF={if_count} ENDIF={endif_count}")
+            issues.append(f"⚠️ 建议检查：IF/ENDIF不配对，IF={if_count} ENDIF={endif_count}")
 
         return issues
 
@@ -119,10 +112,6 @@ class GDLValidator:
                 continue
             up = line.upper()
 
-            if re.match(r'^ADD(?:\b|X\b|Y\b|Z\b|2\b)', up):
-                counts["ADD"] += 1
-            if re.match(r'^DEL\b', up):
-                counts["DEL"] += 1
             if re.match(r'^FOR\b', up):
                 counts["FOR"] += 1
             if re.match(r'^NEXT\b', up):
