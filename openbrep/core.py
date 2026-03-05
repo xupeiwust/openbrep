@@ -62,6 +62,7 @@ class GDLAgent:
         self.max_iterations = max_iterations
         self.on_event = on_event or (lambda *a: None)
         self.validator = GDLValidator()
+        self.auto_rewrite = False  # validator规则不足时暂时关闭，成熟后改回True
 
     def run(
         self,
@@ -278,7 +279,7 @@ class GDLAgent:
             validation_errors = self.validator.validate_all(work_project)
             self.on_event("validate", {"errors": validation_errors})
 
-            if validation_errors:
+            if validation_errors and self.auto_rewrite:
                 rewrite_reason = "上次生成存在以下问题，请修复后重新输出完整脚本：\n" + "\n".join(validation_errors)
                 self.on_event("rewrite", {"reason": rewrite_reason})
 
@@ -536,19 +537,23 @@ class GDLAgent:
         if chat_mode:
             prompt += (
                 "## RESPONSE MODE\n"
-                "The user may ask you to debug, analyze, or explain the current scripts.\n"
-                "- If you can write a concrete fix → use [FILE: path] format as above.\n"
-                "- If you're analyzing, explaining, or need more info → respond in plain Chinese.\n"
-                "- You may combine both: write analysis in Chinese first, then [FILE: ...] blocks for the fix.\n\n"
+                "You are in DEBUG mode. Your job is to DIAGNOSE and EXPLAIN, not rewrite.\n"
+                "严格遵守以下规则：\n"
+                "1. 先定位问题：指出具体脚本名、行号（如有）、问题代码片段\n"
+                "2. 再解释根因：为什么这里错了，GDL 规范是什么\n"
+                "3. 最后给出最小修复：只改有问题的行，不重写整个脚本\n"
+                "4. 用 [FILE: path] 格式输出修复时，只包含改动的部分，"
+                "   在改动行前后各保留3行上下文，其余用 ! ... (unchanged) 标注\n"
+                "5. 禁止：不得在没有明确问题的情况下重写整个脚本\n"
+                "6. 禁止：不得删除用户原有的注释和代码结构\n\n"
                 "## FULL-SCRIPT DEBUG CHECKLIST\n"
-                "When asked to do a full check, inspect ALL of the following in order:\n"
-                "1. paramlist.xml — are all parameter names/types valid? Any duplicates?\n"
-                "2. scripts/1d.gdl (Master) — do all calculations use declared parameters? Any undefined variables?\n"
-                "3. scripts/3d.gdl — ADD/DEL balanced? FOR/NEXT paired? IF/ENDIF paired? Ends with END?\n"
-                "4. scripts/2d.gdl — contains PROJECT2? HOTSPOT2 present?\n"
-                "5. Cross-script consistency — do 3d/2d scripts reference parameters that exist in paramlist?\n"
-                "   Do they use variables computed in Master script correctly?\n"
-                "Report findings in Chinese, grouped by script. If no issues found, say so explicitly.\n\n"
+                "全检查时，按以下顺序逐项报告，每项结论用✅或❌标注：\n"
+                "1. paramlist.xml — 参数名/类型是否合法？有无重复？\n"
+                "2. 1d.gdl (Master) — 变量计算是否引用了已声明参数？有无未定义变量？\n"
+                "3. 3d.gdl — FOR/NEXT配对？IF/ENDIF配对？末尾有END？\n"
+                "4. 2d.gdl — 有无绘图命令？HOTSPOT2是否存在？\n"
+                "5. 跨脚本一致性 — 3d/2d脚本引用的变量是否在参数表或Master中定义？\n"
+                "每项发现问题时，给出具体行内容和修复建议。若无问题，明确说明✅通过。\n\n"
             )
 
         if knowledge:
