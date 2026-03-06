@@ -493,7 +493,7 @@ with st.sidebar:
     st.divider()
 
     st.subheader("📁 工作目录")
-    work_dir = st.text_input("Work Directory", value=st.session_state.work_dir, label_visibility="collapsed")
+    work_dir = st.text_input("Work Directory", value=st.session_state.work_dir, label_visibility="collapsed", disabled=st.session_state.agent_running)
     st.session_state.work_dir = work_dir
 
     # Load persisted license when work_dir is known
@@ -590,7 +590,7 @@ with st.sidebar:
     default_model = _config_defaults.get("llm_model", "glm-4-flash")
     default_index = _mo.index(default_model) if default_model in _mo else 0
 
-    _selected_label = st.selectbox("模型 / Model", _mo_labels, index=default_index)
+    _selected_label = st.selectbox("模型 / Model", _mo_labels, index=default_index, disabled=st.session_state.agent_running)
     # 反查真实model string（去掉标注）
     model_name = _mo[_mo_labels.index(_selected_label)]
     st.session_state["current_model"] = model_name  # 供视觉检测使用
@@ -604,7 +604,8 @@ with st.sidebar:
         "API Key",
         value=st.session_state.model_api_keys.get(model_name, ""),
         type="password",
-        help="Ollama 本地模式不需要 Key"
+        help="Ollama 本地模式不需要 Key",
+        disabled=st.session_state.agent_running,
     )
 
     # Auto-save API Key + 持久化写回 config.toml
@@ -1472,15 +1473,16 @@ def run_agent_generate(
             status_ph.info(f"✏️ 收到 {data['length']} 字符，解析中...")
         elif event_type == "validate":
             errors = data.get("errors", [])
+            warnings = data.get("warnings", [])
             if errors:
-                status_ph.warning(f"⚠️ 发现 {len(errors)} 个问题，AI 自动修复中...")
+                status_ph.error(f"❌ 发现 {len(errors)} 个错误，AI 自动修复中...")
+            elif warnings:
+                status_ph.warning(f"⚠️ 发现 {len(warnings)} 条建议，已附在结果中")
             else:
                 status_ph.success("✅ 校验通过")
         elif event_type == "rewrite":
             round_num = data.get("round", 2)
-            reason = data.get("reason", "")
-            first_line = reason.splitlines()[0] if reason else ""
-            status_ph.info(f"🔄 第 {round_num} 轮修复中：{first_line[:40]}...")
+            status_ph.info(f"🔄 第 {round_num} 轮修复中...")
 
     try:
         llm = get_llm()
@@ -2528,6 +2530,7 @@ with col_editor:
                 "📂 导入 gdl / txt / gsm", type=["gdl", "txt", "gsm"],
                 key="editor_import",
                 help=".gdl/.txt → 解析脚本  |  .gsm → LP_XMLConverter 解包",
+                disabled=st.session_state.agent_running,
             )
             if any_upload:
                 # Dedup: skip if this exact file was already processed this session
@@ -2550,7 +2553,8 @@ with col_editor:
             )
             st.session_state.pending_gsm_name = gsm_name_input
             if st.button("🔧  编  译  GSM", type="primary", width='stretch',
-                         help="将当前所有脚本编译为 ArchiCAD .gsm 对象"):
+                         help="将当前所有脚本编译为 ArchiCAD .gsm 对象",
+                         disabled=st.session_state.agent_running):
                 with st.spinner("编译中..."):
                     success, result_msg = do_compile(
                         proj_now,
@@ -3054,11 +3058,14 @@ with col_chat:
 
         # Chat input — text + attachment icon (right side)
         _chat_placeholder = "描述需求、提问，或搭配图片补充说明…"
+        if st.session_state.agent_running:
+            st.info("⏳ AI 生成中，请稍候...")
         _chat_payload = st.chat_input(
             _chat_placeholder,
             key="chat_main_input",
             accept_file=True,
             file_type=["jpg", "jpeg", "png", "webp", "gif"],
+            disabled=st.session_state.agent_running,
         )
 
         user_input = None
@@ -3209,49 +3216,53 @@ with col_chat:
             st.session_state.chat_history.append({"role": "assistant", "content": err})
             st.rerun()
         else:
-            # Ensure project exists
-            if not st.session_state.project:
-                _vname = Path(_vision_name).stem or "vision_object"
-                _vproj = HSFProject.create_new(_vname, work_dir=st.session_state.work_dir)
-                st.session_state.project = _vproj
-                st.session_state.pending_gsm_name = _vname
-                st.session_state.script_revision = 0
+            try:
+                st.session_state.agent_running = True
+                # Ensure project exists
+                if not st.session_state.project:
+                    _vname = Path(_vision_name).stem or "vision_object"
+                    _vproj = HSFProject.create_new(_vname, work_dir=st.session_state.work_dir)
+                    st.session_state.project = _vproj
+                    st.session_state.pending_gsm_name = _vname
+                    st.session_state.script_revision = 0
 
-            _proj_v = st.session_state.project
-            _has_any_v = any(_proj_v.get_script(s) for s, _, _ in _SCRIPT_MAP)
+                _proj_v = st.session_state.project
+                _has_any_v = any(_proj_v.get_script(s) for s, _, _ in _SCRIPT_MAP)
 
-            with live_output.container():
-                st.chat_message("user").markdown(_user_display)
-                _img_bytes = _thumb_image_bytes(_vision_b64)
-                if _img_bytes:
-                    st.image(_img_bytes, width=240)
-                with st.chat_message("assistant"):
-                    if _route_mode == "generate":
-                        msg = run_vision_generate(
-                            image_b64=_vision_b64,
-                            image_mime=_vision_mime,
-                            extra_text=_joined_text,
-                            proj=_proj_v,
-                            status_col=st.container(),
-                            auto_apply=not _has_any_v,
-                        )
-                    else:
-                        _debug_req = _joined_text or "请根据这张截图定位并修复当前项目中的问题。"
-                        if not _debug_req.startswith("[DEBUG:"):
-                            _debug_req = f"[DEBUG:editor] {_debug_req}"
-                        msg = run_agent_generate(
-                            _debug_req,
-                            _proj_v,
-                            st.container(),
-                            gsm_name=(st.session_state.pending_gsm_name or _proj_v.name),
-                            auto_apply=not _has_any_v,
-                            debug_image_b64=_vision_b64,
-                            debug_image_mime=_vision_mime,
-                        )
-                    st.markdown(msg)
+                with live_output.container():
+                    st.chat_message("user").markdown(_user_display)
+                    _img_bytes = _thumb_image_bytes(_vision_b64)
+                    if _img_bytes:
+                        st.image(_img_bytes, width=240)
+                    with st.chat_message("assistant"):
+                        if _route_mode == "generate":
+                            msg = run_vision_generate(
+                                image_b64=_vision_b64,
+                                image_mime=_vision_mime,
+                                extra_text=_joined_text,
+                                proj=_proj_v,
+                                status_col=st.container(),
+                                auto_apply=not _has_any_v,
+                            )
+                        else:
+                            _debug_req = _joined_text or "请根据这张截图定位并修复当前项目中的问题。"
+                            if not _debug_req.startswith("[DEBUG:"):
+                                _debug_req = f"[DEBUG:editor] {_debug_req}"
+                            msg = run_agent_generate(
+                                _debug_req,
+                                _proj_v,
+                                st.container(),
+                                gsm_name=(st.session_state.pending_gsm_name or _proj_v.name),
+                                auto_apply=not _has_any_v,
+                                debug_image_b64=_vision_b64,
+                                debug_image_mime=_vision_mime,
+                            )
+                        st.markdown(msg)
 
-            st.session_state.chat_history.append({"role": "assistant", "content": msg})
-            st.rerun()
+                st.session_state.chat_history.append({"role": "assistant", "content": msg})
+                st.rerun()
+            finally:
+                st.session_state.agent_running = False
 
     # ── Normal text path ─────────────────────────────────────────────────────────
     elif effective_input:
@@ -3265,46 +3276,50 @@ with col_chat:
             st.session_state.chat_history.append({"role": "assistant", "content": err})
             st.rerun()
         else:
-            llm_for_classify = get_llm()
-            intent, gdl_obj_name = classify_and_extract(
-                user_input, llm_for_classify,
-                project_loaded=bool(st.session_state.project),
-            )
+            try:
+                st.session_state.agent_running = True
+                llm_for_classify = get_llm()
+                intent, gdl_obj_name = classify_and_extract(
+                    user_input, llm_for_classify,
+                    project_loaded=bool(st.session_state.project),
+                )
 
-            with live_output.container():
-                st.chat_message("user").markdown(user_input)
-                with st.chat_message("assistant"):
-                    if intent == "CHAT":
-                        msg = chat_respond(
-                            user_input,
-                            st.session_state.chat_history[:-1],
-                            llm_for_classify,
-                        )
-                        st.markdown(msg)
-                    else:
-                        if not st.session_state.project:
-                            new_proj = HSFProject.create_new(gdl_obj_name, work_dir=st.session_state.work_dir)
-                            st.session_state.project = new_proj
-                            st.session_state.pending_gsm_name = gdl_obj_name
-                            st.session_state.script_revision = 0
-                            st.info(f"📁 已初始化项目 `{gdl_obj_name}`")
+                with live_output.container():
+                    st.chat_message("user").markdown(user_input)
+                    with st.chat_message("assistant"):
+                        if intent == "CHAT":
+                            msg = chat_respond(
+                                user_input,
+                                st.session_state.chat_history[:-1],
+                                llm_for_classify,
+                            )
+                            st.markdown(msg)
+                        else:
+                            if not st.session_state.project:
+                                new_proj = HSFProject.create_new(gdl_obj_name, work_dir=st.session_state.work_dir)
+                                st.session_state.project = new_proj
+                                st.session_state.pending_gsm_name = gdl_obj_name
+                                st.session_state.script_revision = 0
+                                st.info(f"📁 已初始化项目 `{gdl_obj_name}`")
 
-                        proj_current = st.session_state.project
-                        # 只有全新空项目（无任何脚本内容）才自动写入；
-                        # 已有脚本的项目修改时显示确认按钮，防止意外覆盖。
-                        _has_any_script = any(
-                            proj_current.get_script(s) for s, _, _ in _SCRIPT_MAP
-                        )
-                        effective_gsm = st.session_state.pending_gsm_name or proj_current.name
-                        msg = run_agent_generate(
-                            user_input, proj_current, st.container(),
-                            gsm_name=effective_gsm,
-                            auto_apply=not _has_any_script,
-                        )
-                        st.markdown(msg)
+                            proj_current = st.session_state.project
+                            # 只有全新空项目（无任何脚本内容）才自动写入；
+                            # 已有脚本的项目修改时显示确认按钮，防止意外覆盖。
+                            _has_any_script = any(
+                                proj_current.get_script(s) for s, _, _ in _SCRIPT_MAP
+                            )
+                            effective_gsm = st.session_state.pending_gsm_name or proj_current.name
+                            msg = run_agent_generate(
+                                user_input, proj_current, st.container(),
+                                gsm_name=effective_gsm,
+                                auto_apply=not _has_any_script,
+                            )
+                            st.markdown(msg)
 
-            st.session_state.chat_history.append({"role": "assistant", "content": msg})
-            st.rerun()
+                st.session_state.chat_history.append({"role": "assistant", "content": msg})
+                st.rerun()
+            finally:
+                st.session_state.agent_running = False
 
 
     # 锚点定位在页面末尾触发 rerun，尽量不打断当前生成流程

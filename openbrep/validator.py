@@ -4,9 +4,21 @@ from __future__ import annotations
 
 import re
 from collections import Counter
+from dataclasses import dataclass
+from typing import Literal, Optional
 
 from openbrep.hsf_project import HSFProject, ScriptType, GDLParameter
 from openbrep.paramlist_builder import validate_paramlist
+
+
+@dataclass
+class ValidationIssue:
+    level: Literal["error", "warning", "info"]
+    category: Literal["param", "structure", "heuristic", "cross_script"]
+    file: str
+    message: str
+    line: Optional[int] = None
+    auto_fix_safe: bool = False
 
 
 class GDLValidator:
@@ -52,9 +64,9 @@ class GDLValidator:
 
         return issues
 
-    def validate_all(self, project: HSFProject) -> list[str]:
-        """Validate all supported parts of an HSFProject."""
-        issues: list[str] = []
+    def validate_all_issues(self, project: HSFProject) -> list[ValidationIssue]:
+        """Validate all supported parts of an HSFProject with structured issues."""
+        issues: list[ValidationIssue] = []
 
         param_text = "\n".join(
             f"{p.type_tag} {p.name} = {p.value}"
@@ -62,43 +74,38 @@ class GDLValidator:
             for p in (project.parameters or [])
         )
         for issue in self.validate_params(param_text):
-            issues.append(f"paramlist.xml: {issue}")
-
-        script_2d = project.get_script(ScriptType.SCRIPT_2D)
-        for issue in self.validate_2d(script_2d):
-            issues.append(f"2d.gdl: {issue}")
+            is_error = (
+                issue == "paramlist为空或无法解析"
+                or issue.startswith("Duplicate parameter name:")
+                or issue.startswith("Invalid type ")
+            )
+            issues.append(ValidationIssue(
+                level="error" if is_error else "warning",
+                category="param",
+                file="paramlist.xml",
+                message=issue,
+            ))
 
         script_3d = project.get_script(ScriptType.SCRIPT_3D)
         for issue in self.validate_3d(script_3d):
-            issues.append(f"3d.gdl: {issue}")
+            issues.append(ValidationIssue(
+                level="error" if issue == "末尾缺少END" else "warning",
+                category="structure" if issue == "末尾缺少END" else "heuristic",
+                file="3d.gdl",
+                message=issue,
+            ))
 
-        # 跨脚本检查：3D脚本使用的变量是否在参数表中定义
-        if script_3d and project.parameters:
-            param_names = {p.name.upper() for p in project.parameters}
-            GDL_BUILTINS = {
-                "ADD","ADDX","ADDY","ADDZ","BLOCK","BRICK","CYLIND","SPHERE",
-                "CONE","ELLIPS","PRISM","PRISM_","TUBE","SWEEP","RULED","COONS",
-                "FOR","NEXT","IF","THEN","ELSE","ENDIF","WHILE","ENDWHILE",
-                "GOTO","GOSUB","RETURN","END","DEL","ROT","ROTX","ROTY","ROTZ",
-                "MUL","MULX","MULY","MULZ","PEN","MATERIAL","MODEL","RESOL",
-                "TOLER","HOTSPOT","HOTSPOT2","LINE","LINE2","RECT","RECT2",
-                "POLY","POLY2","POLY2_","ARC","ARC2","CIRCLE","CIRCLE2",
-                "TEXT","TEXT2","RICHTEXT2","PROJECT2","FRAGMENT2","PICTURE2",
-                "PRINT","VARDIM1","VARDIM2","REQUEST","IND","INT","ABS","SQR",
-                "SQRT","SIN","COS","TAN","ATN","EXP","LOG","A","B","ZZYZX",
-                "AND","OR","NOT","MOD","DIV","TRUE","FALSE","PI",
-            }
-            used_vars = set(re.findall(r'\b([A-Za-z_][A-Za-z0-9_]*)\b', script_3d))
-            used_vars_upper = {v.upper() for v in used_vars}
-            missing = used_vars_upper - param_names - GDL_BUILTINS
-            missing = {v for v in missing if len(v) > 1}
-            if missing:
-                issues.append(
-                    f"⚠️ 3D脚本使用了未在参数表定义的变量：{', '.join(sorted(missing)[:8])}"
-                    + ("..." if len(missing) > 8 else "")
-                )
+        from openbrep.cross_script_checker import CrossScriptChecker
+        issues += CrossScriptChecker().check(project)
 
         return issues
+
+    def validate_all(self, project: HSFProject) -> list[str]:
+        """Compatibility wrapper returning string messages."""
+        return [
+            f"{i.file}: {'❌' if i.level == 'error' else '⚠️'} {i.message}"
+            for i in self.validate_all_issues(project)
+        ]
 
     def _parse_paramlist_text(self, text: str) -> list[GDLParameter]:
         params: list[GDLParameter] = []

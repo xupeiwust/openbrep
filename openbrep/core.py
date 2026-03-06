@@ -272,12 +272,18 @@ class GDLAgent:
         changes = self._parse_response(response)
 
         validation_feedback = ""
+        validation_warnings: list[str] = []
 
         if changes:
             work_project = deepcopy(project)
             self._apply_changes(work_project, changes)
-            validation_errors = self.validator.validate_all(work_project)
-            self.on_event("validate", {"errors": validation_errors})
+            all_issues = self.validator.validate_all_issues(work_project)
+            validation_errors = [i.message for i in all_issues if i.level == "error"]
+            validation_warnings = [i.message for i in all_issues if i.level == "warning"]
+            self.on_event("validate", {
+                "errors": validation_errors,
+                "warnings": validation_warnings,
+            })
 
             if validation_errors and self.auto_rewrite:
                 rewrite_reason = "上次生成存在以下问题，请修复后重新输出完整脚本：\n" + "\n".join(validation_errors)
@@ -301,8 +307,13 @@ class GDLAgent:
 
                     rewritten_project = deepcopy(project)
                     self._apply_changes(rewritten_project, changes)
-                    second_errors = self.validator.validate_all(rewritten_project)
-                    self.on_event("validate", {"errors": second_errors})
+                    second_issues = self.validator.validate_all_issues(rewritten_project)
+                    second_errors = [i.message for i in second_issues if i.level == "error"]
+                    second_warnings = [i.message for i in second_issues if i.level == "warning"]
+                    self.on_event("validate", {
+                        "errors": second_errors,
+                        "warnings": second_warnings,
+                    })
 
                     if second_errors:
                         # 第三轮：专项修复跨脚本逻辑一致性
@@ -333,12 +344,21 @@ class GDLAgent:
 
                             third_project = deepcopy(project)
                             self._apply_changes(third_project, changes)
-                            third_errors = self.validator.validate_all(third_project)
-                            self.on_event("validate", {"errors": third_errors})
+                            third_issues = self.validator.validate_all_issues(third_project)
+                            third_errors = [i.message for i in third_issues if i.level == "error"]
+                            third_warnings = [i.message for i in third_issues if i.level == "warning"]
+                            self.on_event("validate", {
+                                "errors": third_errors,
+                                "warnings": third_warnings,
+                            })
+                            validation_warnings = third_warnings
                             if third_errors:
                                 validation_feedback = "⚠️ 三轮校验后仍有问题：\n- " + "\n- ".join(third_errors)
                         else:
                             validation_feedback = "⚠️ 第三轮重写未返回可解析脚本，保留第二轮结果。"
+                            validation_warnings = second_warnings
+                    else:
+                        validation_warnings = second_warnings
                     # 二轮通过则 validation_feedback 保持空字符串
                 else:
                     validation_feedback = "⚠️ 自动重写未返回可解析脚本，保留首次生成结果。"
@@ -348,6 +368,9 @@ class GDLAgent:
         plain_text = response[:first_file].strip() if first_file > 0 else (response.strip() if not changes else "")
         if validation_feedback:
             plain_text = f"{plain_text}\n\n{validation_feedback}".strip()
+        if validation_warnings:
+            warning_text = "⚠️ 建议检查：\n- " + "\n- ".join(validation_warnings)
+            plain_text = f"{plain_text}\n\n{warning_text}".strip()
         return changes, plain_text
 
     # ── Context Building ──────────────────────────────────
