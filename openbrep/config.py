@@ -54,7 +54,7 @@ ALL_MODELS = [
     # OpenAI
     "gpt-4.1",
     "gpt-4.1-mini",
-    "gpt-4.5",
+    "gpt-5.4",
     "gpt-4o",
     "gpt-4o-mini",
     "o3",

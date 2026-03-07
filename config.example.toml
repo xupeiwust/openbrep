@@ -18,7 +18,7 @@
 #   moonshot-v1-8k  moonshot-v1-32k  moonshot-v1-128k
 #
 # ── OpenAI (api.openai.com) ──
-#   gpt-4.1 👁  gpt-4.1-mini 👁  gpt-4.5  gpt-4o 👁  gpt-4o-mini 👁
+#   gpt-4.1 👁  gpt-4.1-mini 👁  gpt-5.4  gpt-4o 👁  gpt-4o-mini 👁
 #   o3 🧠  o3-mini 🧠  o4-mini 🧠
 #
 # ── Anthropic Claude (api.anthropic.com) ──
@@ -44,12 +44,12 @@ openai    = "YOUR_OPENAI_API_KEY"      # gpt-*, o3    https://platform.openai.co
 google    = "YOUR_GOOGLE_API_KEY"      # gemini-*     https://aistudio.google.com/apikey
 aliyun    = "YOUR_DASHSCOPE_API_KEY"   # qwen-*, qwq  https://dashscope.console.aliyun.com
 kimi      = "YOUR_KIMI_API_KEY"        # moonshot-*   https://platform.moonshot.cn/console/api-keys
-gpt45     = "your-openai-api-key"
+gpt54     = "your-openai-api-key"
 
-# OpenAI gpt-4.5，官方地址
-[llm.gpt45]
+# OpenAI gpt-5.4，官方地址
+[llm.gpt54]
 base_url = "https://api.openai.com/v1"
-model = "gpt-4.5"
+model = "gpt-5.4"
 
 [agent]
 max_iterations = 5
