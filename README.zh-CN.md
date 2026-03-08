@@ -200,6 +200,7 @@ path = "/Applications/GRAPHISOFT/Archicad 29/..."
 
 | 版本 | 主要内容 |
 |---|---|
+| v0.5.5 | UI重构为四栏布局：左栏操作+预览、中栏脚本+参数表、右栏AI对话（见 docs/releases/v0.5.5.md） |
 | v0.5.4 | validator 分层重构：error/warning 分开，硬错误白名单收紧；跨脚本检查器；debug 最小改动；生成过程实时显示；生成中禁用 widget（见 docs/releases/v0.5.4.md） |
 | **v0.5.3** | 知识库升级与文档品牌增强：整合拆书增量（含 2D 高级与可编译示例）、新增命令索引与命令级精准路由、README 顶部加入 logo（见 `docs/releases/v0.5.3.md`）。 |
 | **v0.5.2** | 版本标注与发布归档规范化：UI 版本号统一读取代码版本；README 标题去版本；新增发布说明文档（见 `docs/releases/v0.5.2.md`） |
