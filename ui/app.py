@@ -675,11 +675,8 @@ with st.sidebar:
 
     st.divider()
 
-    # Project info + quick reset
+    # Project quick reset
     if st.session_state.project:
-        proj = st.session_state.project
-        st.subheader(f"📦 {proj.name}")
-        st.caption(f"参数: {len(proj.parameters)} | 脚本: {len(proj.scripts)}")
         if st.button("🗑️ 清除项目", width='stretch'):
             _keep_work_dir  = st.session_state.work_dir
             _keep_api_keys  = st.session_state.model_api_keys
@@ -2528,7 +2525,7 @@ def _run_preview(proj: HSFProject, target: str) -> tuple[bool, str]:
 #  Layout: Editor (left/main) | AI Chat (right sidebar)
 # ══════════════════════════════════════════════════════════
 
-col_editor, col_chat = st.columns([3, 2], gap="small")
+col_left, col_mid, col_right = st.columns([22, 48, 30], gap="small")
 
 
 # ── Left: Code Editor (always visible) ───────────────────
@@ -2566,20 +2563,17 @@ _SCRIPT_HELP = {
     ),
 }
 
-with col_editor:
+# ── Shared project/editor state ───────────────────────────
+if not st.session_state.project:
+    st.session_state.project = HSFProject.create_new(
+        "untitled", work_dir=st.session_state.work_dir
+    )
+    st.session_state.script_revision = 0
+proj_now = st.session_state.project
+_ev      = st.session_state.editor_version
+
+with col_left:
     with st.container(height=820, border=False):
-        st.markdown("### GDL 脚本编辑")
-
-        # ── Auto-init empty project so editor is always visible ──
-        if not st.session_state.project:
-            st.session_state.project = HSFProject.create_new(
-                "untitled", work_dir=st.session_state.work_dir
-            )
-            st.session_state.script_revision = 0
-        proj_now = st.session_state.project
-        _ev      = st.session_state.editor_version
-
-        # ── Row 1: Import (left) | 🔧 编译 (right, primary/prominent) ──
         tb_import, tb_compile_top = st.columns([1.8, 2.2])
 
         with tb_import:
@@ -2623,7 +2617,6 @@ with col_editor:
                     st.toast("✅ 编译成功", icon="🏗️")
                 st.rerun()
 
-        # ── Compile result banner ─────────────────────────────
         if st.session_state.compile_result is not None:
             _c_ok, _c_msg = st.session_state.compile_result
             if _c_ok:
@@ -2631,7 +2624,6 @@ with col_editor:
             else:
                 st.error(_c_msg)
 
-        # ── Archicad 测试按钮 ─────────────────────────────
         if _TAPIR_IMPORT_OK:
             _bridge = get_bridge()
             _tapir_ok = _bridge.is_available()
@@ -2666,10 +2658,9 @@ with col_editor:
             else:
                 st.caption("⚪ Archicad 未运行或 Tapir 未安装，跳过实时测试")
 
-        # ── Row 2: 全检查 | 预览2D | 预览3D | 清空 | 日志 ───────────
-        tb_check, tb_prev2d, tb_prev3d, tb_clear, tb_log_btn = st.columns([1.2, 1.1, 1.1, 1.0, 1.0])
+        _tb_meta_1, _tb_meta_2, _tb_meta_3 = st.columns([1.2, 1.0, 1.0])
 
-        with tb_check:
+        with _tb_meta_1:
             if st.button("🔍 全检查", width='stretch'):
                 _check_all_ok = True
                 for _stype, _fpath, _label in _SCRIPT_MAP:
@@ -2686,7 +2677,17 @@ with col_editor:
                 if _check_all_ok:
                     st.success("✅ 所有脚本语法正常")
 
-        with tb_prev2d:
+        with _tb_meta_2:
+            if st.button("🗑️ 清空", width='stretch', help="重置项目：脚本、参数、日志全清，保留设置"):
+                st.session_state.confirm_clear = True
+
+        with _tb_meta_3:
+            if st.button("📋 日志", width='stretch'):
+                st.session_state["_show_log_dialog"] = True
+
+        _tb_prev2d, _tb_prev3d = st.columns(2)
+
+        with _tb_prev2d:
             if st.button("👁️ 预览 2D", width='stretch', help="运行 2D 子集解释并显示图形"):
                 _ok, _msg = _run_preview(proj_now, "2d")
                 if _ok:
@@ -2694,7 +2695,7 @@ with col_editor:
                 else:
                     st.error(_msg)
 
-        with tb_prev3d:
+        with _tb_prev3d:
             if st.button("🧊 预览 3D", width='stretch', help="运行 3D 子集解释并显示图形"):
                 _ok, _msg = _run_preview(proj_now, "3d")
                 if _ok:
@@ -2702,15 +2703,6 @@ with col_editor:
                 else:
                     st.error(_msg)
 
-        with tb_clear:
-            if st.button("🗑️ 清空", width='stretch', help="重置项目：脚本、参数、日志全清，保留设置"):
-                st.session_state.confirm_clear = True
-
-        with tb_log_btn:
-            if st.button("📋 日志", width='stretch'):
-                st.session_state["_show_log_dialog"] = True
-
-        # ── 日志弹窗 ──────────────────────────────────────────
         @st.dialog("📋 编译日志")
         def _show_log_dialog():
             if not st.session_state.compile_log:
@@ -2730,7 +2722,6 @@ with col_editor:
             st.session_state["_show_log_dialog"] = False
             _show_log_dialog()
 
-        # ── 清空确认 ──────────────────────────────────────────
         if st.session_state.get("confirm_clear"):
             st.warning("⚠️ 将重置项目（脚本、参数、编译日志），聊天记录保留。确认继续？")
             cc1, cc2, _ = st.columns([1, 1, 4])
@@ -2766,64 +2757,31 @@ with col_editor:
                     st.rerun()
 
         st.divider()
+        _pm = st.session_state.get("preview_meta") or {}
+        _pkind = _pm.get("kind", "")
+        _pts = _pm.get("timestamp", "")
+        _p_title = f"最新预览：{_pkind} · {_pts}" if _pkind else "预览面板（2D / 3D）"
+        st.markdown(f"#### {_p_title}")
 
-        # ── Script / Param Tabs ───────────────────────────────
-        tab_labels = ["参数"] + [lbl for _, _, lbl in _SCRIPT_MAP]
-        all_tabs   = st.tabs(tab_labels)
-        tab_params, *script_tabs = all_tabs
-
-        # Params tab
-        with tab_params:
-            with st.expander("ℹ️ 参数说明"):
-                st.markdown(
-                    "**参数列表** — GDL 对象的可调参数。\n\n"
-                    "- **Type**: `Length` / `Integer` / `Boolean` / `Material` / `String`\n"
-                    "- **Name**: 代码中引用的变量名（camelCase，如 `iShelves`）\n"
-                    "- **Value**: 默认值\n"
-                    "- **Fixed**: 勾选后用户无法在 ArchiCAD 中修改"
-                )
-            param_data = [
-                {"Type": p.type_tag, "Name": p.name, "Value": p.value,
-                 "Description": p.description, "Fixed": "✓" if p.is_fixed else ""}
-                for p in proj_now.parameters
-            ]
-            if param_data:
-                st.dataframe(param_data, width='stretch', hide_index=True)
+        _pv_tab_2d, _pv_tab_3d, _pv_tab_warn = st.tabs(["2D", "3D", "Warnings"])
+        with _pv_tab_2d:
+            _render_preview_2d(st.session_state.get("preview_2d_data"))
+        with _pv_tab_3d:
+            _render_preview_3d(st.session_state.get("preview_3d_data"))
+        with _pv_tab_warn:
+            _warns = st.session_state.get("preview_warnings") or []
+            if not _warns:
+                st.caption("暂无 warning。")
             else:
-                st.caption("暂无参数，通过 AI 对话添加，或手动添加。")
+                for _w in _warns:
+                    st.warning(_w)
 
-            with st.expander("➕ 手动添加参数"):
-                pc1, pc2, pc3, pc4 = st.columns(4)
-                with pc1:
-                    p_type = st.selectbox("Type", [
-                        "Length", "Integer", "Boolean", "RealNum", "Angle",
-                        "String", "Material", "FillPattern", "LineType", "PenColor",
-                    ])
-                with pc2:
-                    p_name = st.text_input("Name", value="bNewParam")
-                with pc3:
-                    p_value = st.text_input("Value", value="0")
-                with pc4:
-                    p_desc = st.text_input("Description")
-                if st.button("添加参数"):
-                    try:
-                        proj_now.add_parameter(GDLParameter(p_name, p_type, p_desc, p_value))
-                        st.success(f"✅ {p_type} {p_name}")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(str(e))
+with col_mid:
+    with st.container(height=820, border=False):
+        st.markdown("### GDL 脚本编辑")
 
-            if st.button("🔍 验证参数"):
-                issues = validate_paramlist(proj_now.parameters)
-                for i in issues:
-                    st.warning(i)
-                if not issues:
-                    st.success("✅ 参数验证通过")
+        script_tabs = st.tabs([lbl for _, _, lbl in _SCRIPT_MAP])
 
-            with st.expander("paramlist.xml 预览"):
-                st.code(build_paramlist_xml(proj_now.parameters), language="xml")
-
-        # Script tabs
         for tab, (stype, fpath, label) in zip(script_tabs, _SCRIPT_MAP):
             with tab:
                 _tab_help_col, _tab_fs_col = st.columns([6, 1])
@@ -2875,7 +2833,57 @@ with col_editor:
                     st.session_state.preview_warnings = []
                     st.session_state.preview_meta = {"kind": "", "timestamp": ""}
 
-        # ── Tapir P0 Panel ────────────────────────────────────
+        st.divider()
+
+        with st.expander("ℹ️ 参数说明"):
+            st.markdown(
+                "**参数列表** — GDL 对象的可调参数。\n\n"
+                "- **Type**: `Length` / `Integer` / `Boolean` / `Material` / `String`\n"
+                "- **Name**: 代码中引用的变量名（camelCase，如 `iShelves`）\n"
+                "- **Value**: 默认值\n"
+                "- **Fixed**: 勾选后用户无法在 ArchiCAD 中修改"
+            )
+        param_data = [
+            {"Type": p.type_tag, "Name": p.name, "Value": p.value,
+             "Description": p.description, "Fixed": "✓" if p.is_fixed else ""}
+            for p in proj_now.parameters
+        ]
+        if param_data:
+            st.dataframe(param_data, width='stretch', hide_index=True)
+        else:
+            st.caption("暂无参数，通过 AI 对话添加，或手动添加。")
+
+        with st.expander("➕ 手动添加参数"):
+            pc1, pc2, pc3, pc4 = st.columns(4)
+            with pc1:
+                p_type = st.selectbox("Type", [
+                    "Length", "Integer", "Boolean", "RealNum", "Angle",
+                    "String", "Material", "FillPattern", "LineType", "PenColor",
+                ])
+            with pc2:
+                p_name = st.text_input("Name", value="bNewParam")
+            with pc3:
+                p_value = st.text_input("Value", value="0")
+            with pc4:
+                p_desc = st.text_input("Description")
+            if st.button("添加参数"):
+                try:
+                    proj_now.add_parameter(GDLParameter(p_name, p_type, p_desc, p_value))
+                    st.success(f"✅ {p_type} {p_name}")
+                    st.rerun()
+                except Exception as e:
+                    st.error(str(e))
+
+        if st.button("🔍 验证参数"):
+            issues = validate_paramlist(proj_now.parameters)
+            for i in issues:
+                st.warning(i)
+            if not issues:
+                st.success("✅ 参数验证通过")
+
+        with st.expander("paramlist.xml 预览"):
+            st.code(build_paramlist_xml(proj_now.parameters), language="xml")
+
         st.divider()
         st.markdown("#### Tapir P0（Inspector + Parameter Workbench）")
         _tapir_inspector_tab, _tapir_workbench_tab = st.tabs(["Inspector", "Parameter Workbench"])
@@ -2884,41 +2892,16 @@ with col_editor:
         with _tapir_workbench_tab:
             _render_tapir_param_workbench_panel()
 
-        # ── Preview Panel ─────────────────────────────────────
-        st.divider()
-        _pm = st.session_state.get("preview_meta") or {}
-        _pkind = _pm.get("kind", "")
-        _pts = _pm.get("timestamp", "")
-        _p_title = f"最新预览：{_pkind} · {_pts}" if _pkind else "预览面板（2D / 3D）"
-        st.markdown(f"#### {_p_title}")
 
-        _pv_tab_2d, _pv_tab_3d, _pv_tab_warn = st.tabs(["2D", "3D", "Warnings"])
-        with _pv_tab_2d:
-            _render_preview_2d(st.session_state.get("preview_2d_data"))
-        with _pv_tab_3d:
-            _render_preview_3d(st.session_state.get("preview_3d_data"))
-        with _pv_tab_warn:
-            _warns = st.session_state.get("preview_warnings") or []
-            if not _warns:
-                st.caption("暂无 warning。")
-            else:
-                for _w in _warns:
-                    st.warning(_w)
+# ── Right: AI Chat panel ──────────────────────────────────
 
-
-    # ── Right: AI Chat panel ──────────────────────────────────
-
-with col_chat:
+with col_right:
     with st.container(height=820, border=False):
         st.markdown("### AI 助手（生成与调试）")
 
-        _chat_proj = st.session_state.project
         _chat_title_col, _chat_clear_col = st.columns([3, 1])
         with _chat_title_col:
-            if _chat_proj:
-                st.caption(f"当前项目: {_chat_proj.name} · 参数: {len(_chat_proj.parameters)} | 脚本: {len(_chat_proj.scripts)}")
-            else:
-                st.caption("描述需求，AI 自动创建 GDL 对象写入编辑器")
+            st.caption("描述需求，AI 自动创建 GDL 对象写入编辑器")
         with _chat_clear_col:
             if st.button("🗑️ 清空对话", width='stretch', help="清空聊天记录，不影响脚本和参数"):
                 st.session_state.chat_history = []
@@ -3020,7 +3003,6 @@ with col_chat:
             if st.session_state.get(f"_showcopy_{_i}", False):
                 st.code(_msg["content"], language="text")
 
-        # ── 采用这套：确认弹窗 ─────────────────────────────
         @st.dialog("📥 采用这套代码")
         def _adopt_confirm_dialog(msg_idx):
             st.warning("将按返回文件覆盖：命中的脚本/参数全覆盖写入，未命中的部分保留不变，确认？")
@@ -3048,7 +3030,6 @@ with col_chat:
         if st.session_state.get("_pending_adopt_idx") is not None:
             _adopt_confirm_dialog(st.session_state["_pending_adopt_idx"])
 
-        # ── Pending AI changes — confirmation widget (in chat flow) ──
         if st.session_state.pending_diffs:
             _pd = st.session_state.pending_diffs
             _pn_s = sum(1 for k in _pd if k.startswith("scripts/"))
@@ -3093,7 +3074,6 @@ with col_chat:
         # Live agent output placeholder (anchored inside this column)
         live_output = st.empty()
 
-        # ── Debug 模式开关（单按钮双态）────────────────────────
         _dbg_active = st.session_state.get("_debug_mode_active") == "editor"
         _dbg_label = "✖ 退出 Debug" if _dbg_active else "🔍 开启 Debug 编辑器"
         if st.button(
@@ -3108,7 +3088,6 @@ with col_chat:
 
         _cur_dbg = "editor" if _dbg_active else None
 
-        # Debug激活时只显示简洁提示，不跑obr本地语法检查
         if _cur_dbg == "editor":
             st.info("🔍 **全脚本 Debug 已激活** — 描述你观察到的问题，或直接发送让 AI 全面检查语法和逻辑")
 
@@ -3121,7 +3100,6 @@ with col_chat:
             label_visibility="collapsed",
         )
 
-        # Chat input — text + attachment icon (right side)
         _chat_placeholder = "描述需求、提问，或搭配图片补充说明…"
         if st.session_state.agent_running:
             st.info("⏳ AI 生成中，请稍候...")
@@ -3150,7 +3128,6 @@ with col_chat:
                     _vision_b64 = base64.b64encode(_raw_bytes).decode()
                     _vision_mime = getattr(_img, "type", "") or "image/jpeg"
                     _vision_name = getattr(_img, "name", "") or "image"
-
 
     # ══════════════════════════════════════════════════════════
     #  Chat handler (outside columns — session state + rerun)
