@@ -86,6 +86,12 @@
 2. 再检查 UI 调用层参数是否正确传入
 3. 最后检查 Streamlit widget 废弃参数
 
+### Streamlit 编辑器缓冲区同步
+- 编辑器内容修改后不会自动同步回 `st.session_state.project`
+- 任何需要读取“当前脚本”的操作（预览、编译、导出）前，
+  必须先调用 `_sync_visible_editor_buffers()` 同步缓冲区
+- 否则会拿到旧脚本或空脚本，表现为“功能失效”但无报错
+
 ### 生成中禁用 widget
 - `agent_running = True` 时禁用：侧边栏模型选择、API Key、工作目录、编译/导入/提取按钮
 - 用 `try/finally` 保证异常时也能解锁
