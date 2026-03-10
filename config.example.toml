@@ -6,7 +6,7 @@
 # 👁 = 支持图片分析  🧠 = 推理模型
 #
 # ── 智谱 GLM (bigmodel.cn) ──
-#   glm-5  glm-4-flash (★ 默认，免费)  glm-4-flash-x (免费)  glm-4-air  glm-4-plus
+#   glm-5  glm-4-flash (★ 默认，免费)  glm-4-air  glm-4-plus  glm-4.6  glm-4.6v  glm-4.7  glm-5
 #
 # ── DeepSeek (api.deepseek.com) ──
 #   deepseek-chat  deepseek-reasoner 🧠
@@ -50,6 +50,26 @@ gpt54     = "your-openai-api-key"
 [llm.gpt54]
 base_url = "https://api.openai.com/v1"
 model = "gpt-5.4"
+
+[llm.glm46]
+api_key = "your-zhipuai-api-key"
+base_url = "https://open.bigmodel.cn/api/paas/v4"
+# glm-4.6：编程强化版
+
+[llm.glm46v]
+api_key = "your-zhipuai-api-key"
+base_url = "https://open.bigmodel.cn/api/paas/v4"
+# glm-4.6v：多模态视觉版，支持图像输入
+
+[llm.glm47]
+api_key = "your-zhipuai-api-key"
+base_url = "https://open.bigmodel.cn/api/paas/v4"
+# glm-4.7：编程SOTA（2025年12月）
+
+[llm.glm5]
+api_key = "your-zhipuai-api-key"
+base_url = "https://open.bigmodel.cn/api/paas/v4"
+# glm-5：旗舰版（2026年2月）
 
 [agent]
 max_iterations = 5

@@ -35,9 +35,11 @@ ALL_MODELS = [
     # Zhipu GLM
     "glm-5",
     "glm-4-flash",
-    "glm-4-flash-x",
     "glm-4-air",
     "glm-4-plus",
+    "glm-4.6",
+    "glm-4.6v",
+    "glm-4.7",
     # DeepSeek
     "deepseek-chat",
     "deepseek-reasoner",
