@@ -3006,7 +3006,8 @@ with col_right:
                             _is_adopted = st.session_state.adopted_msg_index == _i
                             _adopt_label = "✅ 已采用" if _is_adopted else "📥 采用这套"
                             if st.button(_adopt_label, key=f"adopt_{_i}", width='stretch'):
-                                if has_3d and has_param:
+                                
+
                                     st.session_state["_pending_adopt_idx"] = _i
             if st.session_state.get(f"_showcopy_{_i}", False):
                 st.code(_msg["content"], language="text")
