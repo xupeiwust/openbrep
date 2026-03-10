@@ -2943,7 +2943,14 @@ with col_right:
                 st.markdown("<div style='border-top:1px dashed #38bdf8;margin:0.4rem 0;'></div>", unsafe_allow_html=True)
                 st.caption("📍 当前锚点")
             with st.chat_message(_msg["role"]):
-                st.markdown(_msg["content"])
+                _msg_content = _msg.get("content", "")
+                _has_full_suite = (
+                    "scripts/3d.gdl" in _msg_content
+                    and "paramlist.xml" in _msg_content
+                )
+                if st.button(_adopt_label, key=f"adopt_{_i}", width='stretch'):
+                                if _has_full_suite:
+                                    st.session_state["_pending_adopt_idx"] = _i
                 if _msg.get("image_b64"):
                     _img_bytes = _thumb_image_bytes(_msg.get("image_b64", ""))
                     if _img_bytes:
@@ -2999,7 +3006,8 @@ with col_right:
                             _is_adopted = st.session_state.adopted_msg_index == _i
                             _adopt_label = "✅ 已采用" if _is_adopted else "📥 采用这套"
                             if st.button(_adopt_label, key=f"adopt_{_i}", width='stretch'):
-                                st.session_state["_pending_adopt_idx"] = _i
+                                if has_3d and has_param:
+                                    st.session_state["_pending_adopt_idx"] = _i
             if st.session_state.get(f"_showcopy_{_i}", False):
                 st.code(_msg["content"], language="text")
 
@@ -3376,7 +3384,7 @@ with col_right:
     # ── Footer ────────────────────────────────────────────────
     st.divider()
     st.markdown(
-        '<p style="text-align:center; color:#64748b; font-size:0.8rem;">'
+        '<p style="text-align:center; color:#64748b;">'
         f'OpenBrep v{OPENBREP_VERSION} · HSF-native · Code Your Boundaries ·'
         '<a href="https://github.com/byewind1/openbrep">GitHub</a>'
         '</p>',
