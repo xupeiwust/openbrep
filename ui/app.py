@@ -654,9 +654,10 @@ with st.sidebar:
         m = model.lower()
 
         # 自定义 provider 的模型精确匹配
-        for _pcfg in _custom_providers.values():
-            if m == str(_pcfg.get("model", "")).lower():
-                return str(_pcfg.get("base_url", "") or "")
+        for _pcfg in _custom_providers:
+            for _m in _pcfg.get("models", []) or []:
+                if m == str(_m).lower():
+                    return str(_pcfg.get("base_url", "") or "")
 
         if "ollama" in m:
             return "http://localhost:11434"
