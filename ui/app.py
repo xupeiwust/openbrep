@@ -2996,10 +2996,16 @@ with col_right:
                     with _ce:
                         _has_code = "```" in _msg.get("content", "")
                         if _has_code:
-                            _is_adopted = st.session_state.adopted_msg_index == _i
-                            _adopt_label = "✅ 已采用" if _is_adopted else "📥 采用这套"
-                            if st.button(_adopt_label, key=f"adopt_{_i}", width='stretch'):
-                                st.session_state["_pending_adopt_idx"] = _i
+                            _msg_raw = _msg.get("content", "")
+                            _has_full_suite = (
+                                "scripts/3d.gdl" in _msg_raw
+                                and "paramlist.xml" in _msg_raw
+                            )
+                            if _has_full_suite:
+                                _is_adopted = st.session_state.adopted_msg_index == _i
+                                _adopt_label = "✅ 已采用" if _is_adopted else "📥 采用这套"
+                                if st.button(_adopt_label, key=f"adopt_{_i}", width='stretch'):
+                                    st.session_state["_pending_adopt_idx"] = _i
             if st.session_state.get(f"_showcopy_{_i}", False):
                 st.code(_msg["content"], language="text")
 
