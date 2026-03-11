@@ -311,7 +311,7 @@ class GDLAgentConfig:
                 "provider_keys": self.llm.provider_keys,
             },
             "compiler": {
-                "lp_converter_path": self.compiler.path or "",
+                "path": self.compiler.path or "",
                 "work_dir": self.output_dir,
             }
         }
