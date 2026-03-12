@@ -127,9 +127,17 @@ class LLMAdapter:
 
         completion_kwargs.update(kwargs)
 
-        response = self._litellm.completion(**completion_kwargs)
-
-        if not response.choices:
+        try:
+            response = self._litellm.completion(**completion_kwargs)
+        except Exception as exc:
+            litellm_exceptions = getattr(self._litellm, "exceptions", None)
+            bad_request = getattr(litellm_exceptions, "BadRequestError", None) if litellm_exceptions else None
+            auth_error = getattr(litellm_exceptions, "AuthenticationError", None) if litellm_exceptions else None
+            if (bad_request and isinstance(exc, bad_request)) or (auth_error and isinstance(exc, auth_error)):
+                raise RuntimeError(
+                    "LLM 配置错误：请检查 config.toml 中 model 字段是否填写了正确的模型名称（如 gpt-4o、claude-3-5-sonnet），以及对应的 api_key 是否已配置。"
+                ) from exc
+            raise
             raise RuntimeError("LLM returned empty choices list — possible rate limit or content filter")
         choice = response.choices[0]
         return LLMResponse(
@@ -206,7 +214,17 @@ class LLMAdapter:
 
         completion_kwargs.update(kwargs)
 
-        response = self._litellm.completion(**completion_kwargs)
+        try:
+            response = self._litellm.completion(**completion_kwargs)
+        except Exception as exc:
+            litellm_exceptions = getattr(self._litellm, "exceptions", None)
+            bad_request = getattr(litellm_exceptions, "BadRequestError", None) if litellm_exceptions else None
+            auth_error = getattr(litellm_exceptions, "AuthenticationError", None) if litellm_exceptions else None
+            if (bad_request and isinstance(exc, bad_request)) or (auth_error and isinstance(exc, auth_error)):
+                raise RuntimeError(
+                    "LLM 配置错误：请检查 config.toml 中 model 字段是否填写了正确的模型名称（如 gpt-4o、claude-3-5-sonnet），以及对应的 api_key 是否已配置。"
+                ) from exc
+            raise
         if not response.choices:
             raise RuntimeError("LLM returned empty choices list — possible rate limit or content filter")
         choice = response.choices[0]
