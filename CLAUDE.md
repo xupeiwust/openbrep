@@ -109,6 +109,39 @@
 - 禁止删除现有 validator 规则（只能降级为 warning，不能删）
 - 禁止在没有明确问题时重写全部脚本
 
+## ⚠️ vibe coding 行为约束
+
+> 本项目由非程序员主导，Claude Code是执行者。以下规则防止屎山代码和技术债务累积。
+
+### 接到任务前必须做的事
+
+1. 收到模糊需求先问清楚：用户是谁？成功标准是什么？有没有现有代码可以复用？
+2. 涉及超过50行代码或多个文件时，必须先输出计划等确认：目标/影响文件/步骤/不做的事/验证方法
+3. 修改前必须先读相关文件，不能凭假设修改
+
+### 写代码时的硬性规则
+
+- 每个组件/模块只做一件事，不要把所有逻辑堆在一个文件里
+- 公共逻辑提取到utils/或hooks/，不要复制粘贴
+- 每个函数只做一件事，超过30行考虑拆分
+- 关键逻辑必须加注释
+- 错误必须显示给用户，禁止console.log了事或静默失败
+- 禁止硬编码URL、端口、密钥——用环境变量或常量文件
+- 禁止一次性修改超过3个无关文件
+
+### 完成任务后必须做的事
+
+1. 给出验证步骤（打开哪个页面，做什么操作，预期结果是什么）
+2. 提示commit：`git add . && git commit -m "功能描述" && git push origin main`
+3. 涉及新踩坑、架构变化、新依赖时，提示更新CLAUDE.md
+
+### 遇到问题时的原则
+
+- 先读错误信息定位原因，不要盲目试错
+- 修了一个bug引入另一个bug，立刻告知，不要继续叠加修复
+- 对技术方案不确定时，给两个选项让用户决策
+- 发现现有代码潜在问题，即使不影响当前任务也要主动指出
+
 
 ## 配置系统
 
@@ -178,3 +211,56 @@ print('custom_providers:', len(c.llm.custom_providers))
 - 精细代码编辑（str_replace、多步骤缩进修改）：必须用 claude 系列模型
 - GLM-4.7 适合：对话、分析、解释、简单生成
 - GLM-4.7 不适合：复杂代码手术、多文件联动修改、缩进敏感的 Python 编辑
+
+## 测试策略
+- **测试目录与命名**：新测试统一放在 `tests/` 下，文件命名 `test_*.py`，测试用例命名 `test_*`。
+- **最小回归集**：每次修改核心流程（`openbrep/core.py`、`openbrep/llm.py`、`openbrep/config.py`、`ui/app.py`）至少跑：
+  - `python3 -m py_compile openbrep/core.py openbrep/llm.py openbrep/config.py ui/app.py`
+  - `python3 run_tests.py`
+- **新增测试规则**：
+  - 只要改动了输入/输出结构、模型路由、参数解析，必须新增/更新对应测试。
+  - 复现 bug 后新增回归测试，再修 bug。
+- **示例**：
+  - `tests/test_config.py`：覆盖 `custom_providers` 解析与 `get_provider_for_model`。
+  - `tests/test_llm.py`：覆盖 `api_base` 和 `protocol` 分流逻辑。
+
+## 发布流程
+- **版本号规则**：遵循当前策略（`0.5.x` 稳定迭代，`0.6.0` 质量突破）。
+- **发布说明**：每次发布在 `docs/releases/vX.X.X.md` 记录变更要点。
+- **README 版本历史**：更新 `README.md` 和 `README.zh-CN.md` 的版本表格。
+- **发布前检查**：
+  - `python3 -m py_compile openbrep/config.py openbrep/llm.py ui/app.py`
+  - `python3 run_tests.py`
+- **示例命令**：
+  - `git tag v0.5.6`
+  - `git push origin v0.5.6`
+
+## 日志与监控
+- **日志位置**：核心流程日志集中在 `openbrep/core.py` 与 `openbrep/llm.py`，UI 日志在 `ui/app.py`。
+- **日志规则**：
+  - 关键流程（生成/编译/预览/导入）必须有 `st.toast` 或 `st.warning` 给用户反馈。
+  - 失败必须给出错误原因，禁止静默失败。
+- **示例**：
+  - 预览失败时显示：`st.error("预览失败：{e}")`
+  - 编译成功时显示：`st.toast("✅ 编译成功")`
+
+## CI/CD
+- **必过检查**：
+  - `python3 -m py_compile openbrep/config.py openbrep/llm.py ui/app.py`
+  - `python3 run_tests.py`
+- **失败处理**：
+  - 如果 CI 失败，先在本地复现，再修复，禁止直接跳过。
+- **建议工作流**：
+  - PR 前先运行：`python3 run_tests.py`
+  - 合并前确保无未提交变更：`git status -s`
+
+## 安全合规
+- **敏感信息**：
+  - 禁止把真实 API Key/代理地址写入 `config.example.toml`、`docs/`、`README`。
+  - `config.toml` 只允许本地使用，不进 git。
+- **排查清单**：
+  - 提交前运行：`git diff --stat` 检查是否意外包含 `config.toml`。
+  - 关键字符串搜索：`rg -n "api_key|API Key|base_url|proxy"`
+- **示例**：
+  - 正确：`config.example.toml` 使用占位符 `YOUR_API_KEY`。
+  - 错误：在示例里出现真实 key 或私有代理域名。
