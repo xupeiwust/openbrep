@@ -27,3 +27,4 @@ releases/
 !docs/releases/*.md
 keys/license_secret.key
 .obsidian/
+.openbrep/
