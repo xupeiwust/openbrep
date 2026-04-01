@@ -1,0 +1,201 @@
+"""
+Tests for openbrep.static_checker.
+
+Each of the 4 checks has a positive (error caught) and negative (clean code passes) case.
+Uses a lightweight FakeProject instead of a real HSFProject to avoid file I/O.
+"""
+
+import unittest
+from openbrep.static_checker import StaticChecker, StaticCheckResult
+
+
+class FakeParam:
+    def __init__(self, name: str):
+        self.name = name
+
+
+class FakeProject:
+    """Minimal stand-in for HSFProject used in tests."""
+
+    def __init__(self, scripts: dict[str, str], param_names: list[str]):
+        self._scripts = scripts  # {"3d.gdl": "...", "1d.gdl": "..."}
+        self.parameters = [FakeParam(n) for n in param_names]
+
+    def get_script(self, script_type) -> str:
+        return self._scripts.get(script_type.value, "")
+
+
+class TestUndefinedVar(unittest.TestCase):
+
+    def test_undefined_var_detected(self):
+        """Variable used in 3d.gdl that is not in paramlist.xml → error."""
+        proj = FakeProject(
+            scripts={"3d.gdl": "BLOCK width, depth, height\nEND\n"},
+            param_names=["width", "depth"],  # height missing
+        )
+        result = StaticChecker().check(proj)
+        self.assertFalse(result.passed)
+        types = [e.check_type for e in result.errors]
+        self.assertIn("undefined_var", types)
+        details = " ".join(e.detail for e in result.errors)
+        self.assertIn("height", details)
+
+    def test_undefined_var_clean(self):
+        """All variables declared → no undefined_var error."""
+        proj = FakeProject(
+            scripts={"3d.gdl": "BLOCK width, depth, height\nEND\n"},
+            param_names=["width", "depth", "height"],
+        )
+        result = StaticChecker().check(proj)
+        undef = [e for e in result.errors if e.check_type == "undefined_var"]
+        self.assertEqual(undef, [])
+
+    def test_builtin_not_flagged(self):
+        """GDL built-ins (SIN, MAX, etc.) must not be flagged as undefined."""
+        proj = FakeProject(
+            scripts={"3d.gdl": "x = SIN(MAX(A, B))\nBLOCK A, B, ZZYZX\nEND\n"},
+            param_names=[],  # no user params — A/B/ZZYZX are reserved
+        )
+        result = StaticChecker().check(proj)
+        undef = [e for e in result.errors if e.check_type == "undefined_var"]
+        self.assertEqual(undef, [], msg=f"Unexpected: {undef}")
+
+
+class TestForwardDecl(unittest.TestCase):
+
+    def test_forward_decl_detected(self):
+        """_prefixed var used in 3d.gdl but not assigned in 1d.gdl → error."""
+        proj = FakeProject(
+            scripts={
+                "3d.gdl": "BLOCK _thk, _dep, height\nEND\n",
+                "1d.gdl": "_thk = thk\n",   # _dep missing
+            },
+            param_names=["thk", "dep", "height"],
+        )
+        result = StaticChecker().check(proj)
+        types = [e.check_type for e in result.errors]
+        self.assertIn("forward_decl", types)
+        details = " ".join(e.detail for e in result.errors if e.check_type == "forward_decl")
+        self.assertIn("_dep", details)
+
+    def test_forward_decl_clean(self):
+        """All _vars assigned in 1d.gdl → no forward_decl error."""
+        proj = FakeProject(
+            scripts={
+                "3d.gdl": "BLOCK _thk, _dep, height\nEND\n",
+                "1d.gdl": "_thk = thk\n_dep = dep\n",
+            },
+            param_names=["thk", "dep", "height"],
+        )
+        result = StaticChecker().check(proj)
+        fwd = [e for e in result.errors if e.check_type == "forward_decl"]
+        self.assertEqual(fwd, [])
+
+
+class TestStackImbalance(unittest.TestCase):
+
+    def test_stack_imbalance_detected(self):
+        """ADD without matching DEL → stack_imbalance error."""
+        proj = FakeProject(
+            scripts={"3d.gdl": "ADD 1, 0, 0\nBLOCK 1,1,1\n! no DEL\nEND\n"},
+            param_names=[],
+        )
+        result = StaticChecker().check(proj)
+        types = [e.check_type for e in result.errors]
+        self.assertIn("stack_imbalance", types)
+        detail = next(e.detail for e in result.errors if e.check_type == "stack_imbalance")
+        self.assertIn("push(1)", detail)
+        self.assertIn("pop(0)", detail)
+
+    def test_stack_balanced(self):
+        """Balanced ADD/DEL → no stack_imbalance error."""
+        proj = FakeProject(
+            scripts={"3d.gdl": "ADD 1,0,0\nBLOCK 1,1,1\nDEL 1\nEND\n"},
+            param_names=[],
+        )
+        result = StaticChecker().check(proj)
+        si = [e for e in result.errors if e.check_type == "stack_imbalance"]
+        self.assertEqual(si, [])
+
+    def test_stack_multiple_pushes(self):
+        """ADDX + ADDY + 2×DEL → balanced."""
+        proj = FakeProject(
+            scripts={"3d.gdl": "ADDX 1\nADDY 2\nBLOCK 1,1,1\nDEL 2\nEND\n"},
+            param_names=[],
+        )
+        result = StaticChecker().check(proj)
+        si = [e for e in result.errors if e.check_type == "stack_imbalance"]
+        self.assertEqual(si, [])
+
+
+class TestBlockMismatch(unittest.TestCase):
+
+    def test_if_endif_mismatch_detected(self):
+        """Unclosed IF block → block_mismatch error."""
+        proj = FakeProject(
+            scripts={"3d.gdl": "IF A > 1 THEN\n  BLOCK 1,1,1\n! missing ENDIF\nEND\n"},
+            param_names=[],
+        )
+        result = StaticChecker().check(proj)
+        types = [e.check_type for e in result.errors]
+        self.assertIn("block_mismatch", types)
+        detail = next(e.detail for e in result.errors if e.check_type == "block_mismatch")
+        self.assertIn("ENDIF", detail)
+
+    def test_for_next_mismatch_detected(self):
+        """FOR without NEXT → block_mismatch error."""
+        proj = FakeProject(
+            scripts={"3d.gdl": "FOR i = 1 TO 3\n  BLOCK 1,1,1\n! missing NEXT\nEND\n"},
+            param_names=[],
+        )
+        result = StaticChecker().check(proj)
+        types = [e.check_type for e in result.errors]
+        self.assertIn("block_mismatch", types)
+        detail = next(e.detail for e in result.errors if e.check_type == "block_mismatch")
+        self.assertIn("NEXT", detail)
+
+    def test_single_line_if_not_counted(self):
+        """Single-line IF THEN does not require ENDIF."""
+        proj = FakeProject(
+            scripts={"3d.gdl": "IF A > 0 THEN BLOCK 1,1,1\nEND\n"},
+            param_names=[],
+        )
+        result = StaticChecker().check(proj)
+        bm = [e for e in result.errors if e.check_type == "block_mismatch"]
+        self.assertEqual(bm, [], msg=f"Unexpected: {bm}")
+
+    def test_block_clean(self):
+        """Properly matched IF/ENDIF and FOR/NEXT → no block_mismatch."""
+        proj = FakeProject(
+            scripts={"3d.gdl": (
+                "IF A > 1 THEN\n"
+                "  FOR i = 1 TO 3\n"
+                "    BLOCK 1,1,1\n"
+                "  NEXT i\n"
+                "ENDIF\n"
+                "END\n"
+            )},
+            param_names=[],
+        )
+        result = StaticChecker().check(proj)
+        bm = [e for e in result.errors if e.check_type == "block_mismatch"]
+        self.assertEqual(bm, [])
+
+
+class TestEdgeCases(unittest.TestCase):
+
+    def test_none_project_passes(self):
+        """None project must return passed=True without raising."""
+        result = StaticChecker().check(None)
+        self.assertTrue(result.passed)
+        self.assertEqual(result.errors, [])
+
+    def test_empty_scripts_pass(self):
+        """Project with no script content should pass all checks."""
+        proj = FakeProject(scripts={}, param_names=["width"])
+        result = StaticChecker().check(proj)
+        self.assertTrue(result.passed)
+
+
+if __name__ == "__main__":
+    unittest.main()

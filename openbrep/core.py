@@ -21,6 +21,7 @@ from openbrep.compiler import CompileResult, HSFCompiler, MockHSFCompiler
 from openbrep.paramlist_builder import validate_paramlist
 from openbrep.validator import GDLValidator
 from openbrep.error_classifier import ErrorCategory, ErrorClassifier
+from openbrep.static_checker import StaticChecker
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +69,7 @@ class GDLAgent:
         self.validator = GDLValidator()
         self.auto_rewrite = False  # validator规则不足时暂时关闭，成熟后改回True
         self.error_classifier = ErrorClassifier()
+        self.static_checker = StaticChecker()
 
     def run(
         self,
@@ -163,7 +165,20 @@ class GDLAgent:
                 self.on_event("validation_error", {"errors": param_issues})
                 continue
 
-            # 3. COMPILE — Write to disk and compile
+            # 3. STATIC CHECK — fast pre-compile analysis (no disk write needed)
+            static_result = self.static_checker.check(project)
+            if not static_result.passed:
+                hint = "\n".join(
+                    f"[{e.check_type}] {e.file}: {e.detail}"
+                    for e in static_result.errors
+                )
+                logger.debug(f"StaticCheck: {static_result.errors}")
+                self.on_event("static_check_error", {"errors": [e.detail for e in static_result.errors]})
+                history.append({"attempt": attempt, "stage": "static_check", "error": hint})
+                prev_error = hint
+                continue
+
+            # 4. COMPILE — Write to disk and compile
             hsf_dir = project.save_to_disk()
             self.on_event("compile_start", {"hsf_dir": str(hsf_dir)})
 
