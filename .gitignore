@@ -25,6 +25,8 @@ licenses.csv
 releases/
 !docs/releases/
 !docs/releases/*.md
-keys/license_secret.key
+
+# pro internals (algorithm details, not for public repo)
+docs/pro_*.md
 .obsidian/
 .openbrep/
