@@ -22,6 +22,7 @@ from openbrep.paramlist_builder import validate_paramlist
 from openbrep.validator import GDLValidator
 from openbrep.error_classifier import ErrorCategory, ErrorClassifier
 from openbrep.static_checker import StaticChecker
+from openbrep.script_generator import ScriptGenerator, ScriptType as SGScriptType
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +71,8 @@ class GDLAgent:
         self.auto_rewrite = False  # validator规则不足时暂时关闭，成熟后改回True
         self.error_classifier = ErrorClassifier()
         self.static_checker = StaticChecker()
+        self.script_generator = ScriptGenerator(llm_caller=self._call_llm)
+        self.use_context_surgery = True  # set False to fall back to single-call mode
 
     def run(
         self,
@@ -108,49 +111,103 @@ class GDLAgent:
         for attempt in range(1, self.max_iterations + 1):
             self.on_event("attempt", {"attempt": attempt})
 
-            # 2. GENERATE — Build focused context
-            context = self._build_context(project, affected)
-            messages = self._build_messages(
-                instruction, context, knowledge, skills, prev_error
-            )
-
-            # Call LLM
-            raw_response = self.llm.generate(messages)
-            # Handle both string (MockLLM in tests) and LLMResponse objects
-            if isinstance(raw_response, str):
-                response = raw_response
-            elif hasattr(raw_response, 'content'):
-                response = raw_response.content
-            else:
-                response = str(raw_response)
-            self.on_event("llm_response", {"length": len(response)})
-
-            # Parse LLM output → apply to project
-            changes = self._parse_response(response)
-            if not changes:
-                history.append({
-                    "attempt": attempt,
-                    "stage": "parse",
-                    "error": "LLM output could not be parsed into file changes",
-                })
-                prev_error = "Your output could not be parsed. Use [FILE: path] format."
-                continue
-
-            # Anti-loop: check for identical output
-            output_hash = hash(json.dumps(changes, sort_keys=True))
-            if prev_output is not None and output_hash == prev_output:
-                self.on_event("anti_loop", {})
-                return AgentResult(
-                    status=Status.FAILED,
-                    attempts=attempt,
-                    error_summary="Identical output detected, stopping",
-                    project=project,
-                    history=history,
+            # 2. GENERATE
+            if self.use_context_surgery:
+                # Per-script independent calls (Context Surgery mode)
+                sg_affected = self.script_generator.detect_affected_scripts(instruction)
+                eff_instr = (
+                    f"{instruction}\n\nFix previous error:\n{prev_error}"
+                    if prev_error else instruction
                 )
-            prev_output = output_hash
+                sg_results = []
+                for sg_st in sg_affected:
+                    ctx_dict = self._build_script_context(sg_st, project)
+                    r = self.script_generator.generate_script(
+                        sg_st, eff_instr, ctx_dict, knowledge, skills
+                    )
+                    sg_results.append(r)
+                    self.on_event("llm_response", {
+                        "script": sg_st.value,
+                        "length": len(r.content),
+                        "success": r.success,
+                    })
 
-            # Apply changes to project
-            self._apply_changes(project, changes)
+                if not any(r.success and r.content for r in sg_results):
+                    prev_error = "ScriptGenerator produced no output — check LLM response."
+                    history.append({"attempt": attempt, "stage": "generate", "error": prev_error})
+                    continue
+
+                # Build changes dict (same shape as _parse_response output)
+                changes = {r.script_type.value: r.content
+                           for r in sg_results if r.success and r.content}
+
+                # Anti-loop check
+                output_hash = hash(json.dumps(changes, sort_keys=True))
+                if prev_output is not None and output_hash == prev_output:
+                    self.on_event("anti_loop", {})
+                    return AgentResult(
+                        status=Status.FAILED,
+                        attempts=attempt,
+                        error_summary="Identical output detected, stopping",
+                        project=project,
+                        history=history,
+                    )
+                prev_output = output_hash
+
+                # Apply params first (special path)
+                params_result = next(
+                    (r for r in sg_results
+                     if r.script_type == SGScriptType.PARAMS and r.success and r.content),
+                    None,
+                )
+                if params_result:
+                    new_params = self._parse_param_text(params_result.content)
+                    if new_params:
+                        project.parameters = new_params
+
+                # Apply remaining scripts via merge_results
+                non_param = [r for r in sg_results
+                             if r.script_type != SGScriptType.PARAMS and r.success]
+                self.script_generator.merge_results(non_param, project)
+
+            else:
+                # Fallback: single LLM call (original behaviour)
+                context = self._build_context(project, affected)
+                messages = self._build_messages(
+                    instruction, context, knowledge, skills, prev_error
+                )
+                raw_response = self.llm.generate(messages)
+                if isinstance(raw_response, str):
+                    response = raw_response
+                elif hasattr(raw_response, 'content'):
+                    response = raw_response.content
+                else:
+                    response = str(raw_response)
+                self.on_event("llm_response", {"length": len(response)})
+
+                changes = self._parse_response(response)
+                if not changes:
+                    history.append({
+                        "attempt": attempt,
+                        "stage": "parse",
+                        "error": "LLM output could not be parsed into file changes",
+                    })
+                    prev_error = "Your output could not be parsed. Use [FILE: path] format."
+                    continue
+
+                output_hash = hash(json.dumps(changes, sort_keys=True))
+                if prev_output is not None and output_hash == prev_output:
+                    self.on_event("anti_loop", {})
+                    return AgentResult(
+                        status=Status.FAILED,
+                        attempts=attempt,
+                        error_summary="Identical output detected, stopping",
+                        project=project,
+                        history=history,
+                    )
+                prev_output = output_hash
+
+                self._apply_changes(project, changes)
 
             # Validate parameters
             param_issues = validate_paramlist(project.parameters)
@@ -405,6 +462,55 @@ class GDLAgent:
             warning_text = "⚠️ 建议检查：\n- " + "\n- ".join(validation_warnings)
             plain_text = f"{plain_text}\n\n{warning_text}".strip()
         return changes, plain_text
+
+    # ── LLM wrapper (for ScriptGenerator) ────────────────
+
+    def _call_llm(self, messages: list[dict]) -> str:
+        raw = self.llm.generate(messages)
+        return raw.content if hasattr(raw, "content") else str(raw)
+
+    # ── Script context builder (Context Surgery) ──────────
+
+    def _build_script_context(self, script_type: SGScriptType, project: HSFProject) -> dict:
+        """
+        Return {file_path: content} for generating one specific script.
+
+        Always includes paramlist.xml.
+        3d/2d also receive 1d.gdl (for derived variable context).
+        Never includes unrelated scripts.
+        """
+        # Param text
+        param_lines = [
+            f"{p.type_tag} {p.name} = {p.value}  ! {p.description}"
+            + (" [FIXED]" if p.is_fixed else "")
+            for p in project.parameters
+        ]
+        ctx: dict = {"paramlist.xml": "\n".join(param_lines)}
+
+        def _get(hsf_value: str) -> str:
+            for st in ScriptType:
+                if st.value == hsf_value:
+                    return project.get_script(st) or ""
+            return ""
+
+        if script_type == SGScriptType.PARAMS:
+            pass  # paramlist only
+
+        elif script_type == SGScriptType.MASTER:
+            ctx["scripts/1d.gdl"] = _get("1d.gdl")
+
+        elif script_type in (SGScriptType.SCRIPT_3D, SGScriptType.SCRIPT_2D):
+            ctx["scripts/1d.gdl"] = _get("1d.gdl")
+            hsf_val = script_type.value.replace("scripts/", "")
+            ctx[script_type.value] = _get(hsf_val)
+
+        elif script_type == SGScriptType.PARAM_SCRIPT:
+            ctx[script_type.value] = _get("vl.gdl")
+
+        elif script_type == SGScriptType.UI_SCRIPT:
+            ctx[script_type.value] = _get("ui.gdl")
+
+        return ctx
 
     # ── Context Building ──────────────────────────────────
 
