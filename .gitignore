@@ -20,7 +20,7 @@ ui/app.py.backup_*
 
 # build artifacts
 release/
-keys/pro_private.pem
+keys/
 licenses.csv
 releases/
 !docs/releases/
