@@ -9,6 +9,7 @@ a separate file, so only relevant files are fed to the LLM.
 from __future__ import annotations
 
 import json
+import logging
 from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import Enum
@@ -19,6 +20,9 @@ from openbrep.hsf_project import HSFProject, ScriptType, GDLParameter
 from openbrep.compiler import CompileResult, HSFCompiler, MockHSFCompiler
 from openbrep.paramlist_builder import validate_paramlist
 from openbrep.validator import GDLValidator
+from openbrep.error_classifier import ErrorCategory, ErrorClassifier
+
+logger = logging.getLogger(__name__)
 
 
 class Status(Enum):
@@ -63,6 +67,7 @@ class GDLAgent:
         self.on_event = on_event or (lambda *a: None)
         self.validator = GDLValidator()
         self.auto_rewrite = False  # validator规则不足时暂时关闭，成熟后改回True
+        self.error_classifier = ErrorClassifier()
 
     def run(
         self,
@@ -182,8 +187,8 @@ class GDLAgent:
                     history=history,
                 )
 
-            # 4. Compile failed — prepare error feedback
-            error_msg = result.stderr
+            # 4. Compile failed — classify error and prepare targeted feedback
+            error_msg = result.stderr or result.stdout or ""
             self.on_event("compile_error", {
                 "attempt": attempt,
                 "error": error_msg,
@@ -193,7 +198,20 @@ class GDLAgent:
                 "stage": "compile",
                 "error": error_msg,
             })
-            prev_error = error_msg
+
+            error_case = self.error_classifier.classify(error_msg)
+            logger.debug(f"ErrorCase: {error_case}")
+
+            if error_case.category != ErrorCategory.UNKNOWN:
+                # Inject targeted hint instead of raw stderr dump
+                target_info = f" (file: {error_case.target_file})" if error_case.target_file else ""
+                prev_error = (
+                    f"Compile error [{error_case.category.value}]{target_info}:\n"
+                    f"{error_case.hint}\n\n"
+                    f"Raw error:\n{error_msg}"
+                )
+            else:
+                prev_error = error_msg
 
         # Exhausted
         return AgentResult(
