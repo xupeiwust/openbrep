@@ -149,10 +149,9 @@ class LLMConfig:
 
     def _is_custom_provider_model(self, model: str | None = None) -> bool:
         target = (model or self.model or "")
-        model_bare = target.split("/")[-1] if "/" in target else target
         for provider in self.custom_providers:
             models = provider.get("models", []) or []
-            if any(model_bare.lower() == str(candidate).lower().split("/")[-1] for candidate in models):
+            if any(target.lower() == str(candidate).lower() for candidate in models):
                 return True
         return False
 

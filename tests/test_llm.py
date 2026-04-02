@@ -69,7 +69,7 @@ class TestLLMAdapterVision(unittest.TestCase):
             adapter.generate_with_image("describe", "YWJj")
         self.assertIn("LLM 配置错误", str(cm.exception))
 
-    def test_custom_provider_model_stays_unprefixed(self):
+    def test_gpt5_custom_provider_model_stays_unprefixed(self):
         config = LLMConfig(
             model="gpt-5.4",
             custom_providers=[{"name": "ymg", "models": ["gpt-5.4"], "protocol": "openai"}],
@@ -77,48 +77,135 @@ class TestLLMAdapterVision(unittest.TestCase):
         adapter = LLMAdapter(config)
         self.assertEqual(adapter._resolve_model_string(), "gpt-5.4")
 
+    def test_non_gpt_custom_model_stays_unprefixed(self):
+        config = LLMConfig(
+            model="ymg-chat",
+            custom_providers=[{"name": "ymg", "models": ["ymg-chat"], "protocol": "openai"}],
+        )
+        adapter = LLMAdapter(config)
+        self.assertEqual(adapter._resolve_model_string(), "ymg-chat")
+
     def test_builtin_gpt5_model_keeps_openai_prefix(self):
         config = LLMConfig(model="gpt-5.4")
         adapter = LLMAdapter(config)
         self.assertEqual(adapter._resolve_model_string(), "openai/gpt-5.4")
 
-    def test_custom_provider_generate_keeps_config_temperature_and_strips_v1(self):
+    def test_generate_with_non_gpt_custom_model_uses_plain_kwargs(self):
         config = LLMConfig(
-            model="gpt-5.4",
+            model="ymg-chat",
             api_key="test-key",
             api_base="https://api.airsim.eu.cc/v1",
             temperature=0.2,
-            custom_providers=[{"name": "ymg", "models": ["gpt-5.4"], "protocol": "openai"}],
+            max_tokens=9999,
+            timeout=22,
+            custom_providers=[{"name": "ymg", "models": ["ymg-chat"], "protocol": "openai"}],
         )
         adapter = LLMAdapter(config)
         adapter._litellm = MagicMock()
-        adapter._litellm.completion.return_value = self._mock_response(model_name="gpt-5.4")
+        adapter._litellm.completion.return_value = self._mock_response(model_name="ymg-chat")
 
         result = adapter.generate([{"role": "user", "content": "hi"}])
 
         self.assertEqual(result.content, "ok")
         kwargs = adapter._litellm.completion.call_args.kwargs
-        self.assertEqual(kwargs["model"], "gpt-5.4")
+        self.assertEqual(kwargs["model"], "ymg-chat")
         self.assertEqual(kwargs["temperature"], 0.2)
-        self.assertEqual(kwargs["api_base"], "https://api.airsim.eu.cc")
+        self.assertEqual(kwargs["max_tokens"], 9999)
+        self.assertEqual(kwargs["timeout"], 22)
+        self.assertEqual(kwargs["api_base"], "https://api.airsim.eu.cc/v1")
         self.assertNotIn("drop_params", kwargs)
 
-    def test_builtin_gpt5_generate_still_applies_openai_overrides(self):
+    def test_builtin_gpt5_generate_enables_stream_by_default(self):
         config = LLMConfig(
             model="gpt-5.4",
             api_key="test-key",
             temperature=0.2,
+            max_tokens=4096,
+            timeout=33,
         )
         adapter = LLMAdapter(config)
         adapter._litellm = MagicMock()
         adapter._litellm.completion.return_value = self._mock_response(model_name="openai/gpt-5.4")
 
+        adapter.generate([{"role": "user", "content": "hi"}])
+
+        kwargs = adapter._litellm.completion.call_args.kwargs
+        self.assertTrue(kwargs["stream"])
+
+    def test_builtin_gpt5_generate_streams_and_aggregates_delta_content(self):
+        config = LLMConfig(
+            model="gpt-5.4",
+            api_key="test-key",
+            temperature=0.2,
+            max_tokens=4096,
+            timeout=33,
+        )
+        adapter = LLMAdapter(config)
+        chunk1 = MagicMock()
+        chunk1.choices = [MagicMock(delta=MagicMock(content="hello"))]
+        chunk2 = MagicMock()
+        chunk2.choices = [MagicMock(delta=MagicMock(content=" world"))]
+        chunk3 = MagicMock()
+        chunk3.choices = [MagicMock(delta=MagicMock(content=None))]
+        adapter._litellm = MagicMock()
+        adapter._litellm.completion.return_value = [chunk1, chunk2, chunk3]
+
         result = adapter.generate([{"role": "user", "content": "hi"}])
+
+        self.assertEqual(result.content, "hello world")
+        self.assertEqual(result.model, "openai/gpt-5.4")
+        self.assertEqual(result.usage, {})
+        self.assertEqual(result.finish_reason, "stop")
+        kwargs = adapter._litellm.completion.call_args.kwargs
+        self.assertEqual(kwargs["model"], "openai/gpt-5.4")
+        self.assertTrue(kwargs["stream"])
+        self.assertTrue(kwargs["drop_params"])
+
+    def test_builtin_gpt5_generate_keeps_configured_parameters(self):
+        config = LLMConfig(
+            model="gpt-5.4",
+            api_key="test-key",
+            temperature=0.2,
+            max_tokens=4096,
+            timeout=33,
+        )
+        adapter = LLMAdapter(config)
+        adapter._litellm = MagicMock()
+        adapter._litellm.completion.return_value = self._mock_response(model_name="openai/gpt-5.4")
+
+        result = adapter.generate([{"role": "user", "content": "hi"}], stream=False)
 
         self.assertEqual(result.content, "ok")
         kwargs = adapter._litellm.completion.call_args.kwargs
         self.assertEqual(kwargs["model"], "openai/gpt-5.4")
-        self.assertEqual(kwargs["temperature"], 1)
+        self.assertEqual(kwargs["temperature"], 0.2)
+        self.assertEqual(kwargs["max_tokens"], 4096)
+        self.assertEqual(kwargs["timeout"], 33)
+        self.assertFalse(kwargs["stream"])
+        self.assertTrue(kwargs["drop_params"])
+
+    def test_builtin_gpt5_vision_sets_drop_params_without_changing_temperature(self):
+        config = LLMConfig(
+            model="gpt-5.4",
+            api_key="test-key",
+            api_base="https://example.com/v1",
+            temperature=0.2,
+            max_tokens=512,
+            timeout=12,
+        )
+        adapter = LLMAdapter(config)
+        adapter._litellm = MagicMock()
+        adapter._litellm.completion.return_value = self._mock_response(model_name="openai/gpt-5.4")
+
+        result = adapter.generate_with_image(
+            text_prompt="describe",
+            image_b64="YWJj",
+            image_mime="image/png",
+        )
+
+        self.assertEqual(result.content, "ok")
+        kwargs = adapter._litellm.completion.call_args.kwargs
+        self.assertEqual(kwargs["temperature"], 0.2)
         self.assertTrue(kwargs["drop_params"])
 
 

@@ -321,11 +321,6 @@ class LLMAdapter:
 
         # Already has a provider prefix
         if "/" in model and not model.startswith("http"):
-            if self._is_custom_provider_model(model):
-                for provider in self.config.custom_providers:
-                    prefix = str(provider.get("name", "") or "") + "/"
-                    if prefix != "/" and model.startswith(prefix):
-                        return model[len(prefix):]
             return model
 
         # Custom provider models: use as-is, let api_base handle routing
