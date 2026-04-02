@@ -244,6 +244,7 @@ class LLMAdapter:
             "temperature": self.config.temperature,
             "max_tokens": self.config.max_tokens,
             "timeout": self.config.timeout,
+            "stream": True,
         }
 
         model_lower = model.lower()
